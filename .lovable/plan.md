@@ -1,44 +1,44 @@
 
 
-## Simplify Edge Function: Send PDF Directly to LLM
+## Soporte para hipotecas mixtas
 
-### What the user wants
-The current edge function has a custom PDF text parser (lines 11-80) that tries to extract text from the PDF binary. The user wants a simpler approach: send the PDF directly to the AI model and let it do all the work.
+### Problema
+Cuando la oferta es de una **hipoteca mixta** (parte fija + parte variable), el sistema debe extraer específicamente:
+- El **TIN del periodo fijo** (no el variable)
+- La **cuota bonificada** (no la sin bonificar)
 
-### Plan
+Actualmente el prompt no distingue entre tipos de hipoteca ni prioriza estos valores para mixtas.
 
-**Single change: Rewrite `supabase/functions/analyze-mortgage/index.ts`**
+### Cambios
 
-1. **Remove** the custom `extractTextFromPdf` function entirely (lines 11-80)
-2. **Send the PDF as base64 to Gemini's multimodal API** — Gemini models support PDF/image inputs natively via the `image_url` content type with a `data:application/pdf;base64,...` data URI
-3. **Keep everything else**: the system prompt, tool calling schema, validation logic, and response mapping
+**1. Actualizar el system prompt** (`supabase/functions/analyze-mortgage/index.ts`, líneas 9-30)
 
-The flow becomes:
-```text
-Client sends base64 PDF → Edge function forwards to Gemini as multimodal input → Gemini reads the PDF directly → Returns structured data via tool calling → Validation → Response
+Añadir reglas específicas para hipotecas mixtas:
+- Detectar si la oferta es mixta (palabras clave: "hipoteca mixta", "periodo fijo", "periodo variable", "tramo fijo", "tramo variable")
+- Devolver un nuevo campo `tipo_hipoteca` ("fija", "variable", "mixta")
+- Cuando sea mixta: el `tin_bonificado` debe ser el TIN del **tramo fijo**, y la `cuota_final` debe ser la **cuota bonificada** del tramo fijo
+- Poner el tramo variable en `alternatives`
+
+**2. Añadir campo `tipo_hipoteca` al schema de tool calling** (mismo archivo, dentro de `parameters.properties`)
+
+Nuevo campo:
+```
+tipo_hipoteca: {
+  type: "string",
+  enum: ["fija", "variable", "mixta"],
+  description: "Tipo de hipoteca detectado"
+}
 ```
 
-The key change is in the `messages` payload — instead of sending extracted text as a user message, we send the PDF as a multimodal content part:
+**3. Actualizar tipos TypeScript** (`src/types/mortgage.ts`)
 
-```typescript
-messages: [
-  { role: "system", content: SYSTEM_PROMPT },
-  {
-    role: "user",
-    content: [
-      { type: "text", text: `Analiza este documento hipotecario: "${file_name}"` },
-      { type: "image_url", url: { url: `data:application/pdf;base64,${pdf_base64}` } }
-    ]
-  }
-]
-```
+Añadir `tipo_hipoteca: "fija" | "variable" | "mixta"` al tipo `MortgageAnalysisResult.extraction`.
 
-This eliminates the fragile text extraction, supports scanned PDFs (Gemini has built-in OCR), and gives the model full visual context of tables and layouts.
+**4. Actualizar el ResultsPanel** (`src/components/ResultsPanel.tsx`)
 
-### What stays the same
-- CORS headers
-- Tool calling schema for structured output
-- Validation logic (TAE ≥ TIN, bonificado ≤ sin bonificar, count check)
-- Response mapping to the expected JSON schema
-- Rate limit / error handling
+Mostrar un badge/etiqueta con el tipo de hipoteca detectado (Fija / Variable / Mixta) en la cabecera de resultados.
+
+**5. Propagar el campo en el response mapping** (líneas 258-345 del edge function)
+
+Incluir `tipo_hipoteca` en el objeto `result.extraction`.
 
