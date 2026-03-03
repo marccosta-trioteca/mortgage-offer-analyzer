@@ -1,0 +1,4 @@
+project_id = "lmfpemvwnekrhkectdru"
+
+[functions.analyze-mortgage]
+verify_jwt = false
