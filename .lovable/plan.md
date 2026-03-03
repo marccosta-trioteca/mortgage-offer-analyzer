@@ -1,59 +1,44 @@
 
 
-## Mortgage PDF Analyzer — Implementation Plan
+## Simplify Edge Function: Send PDF Directly to LLM
 
-### Overview
-A stateless tool where users upload a Spanish mortgage offer PDF, which gets processed by a Lovable Cloud edge function (text extraction + LLM analysis), and results are displayed alongside an embedded PDF viewer with evidence highlighting.
+### What the user wants
+The current edge function has a custom PDF text parser (lines 11-80) that tries to extract text from the PDF binary. The user wants a simpler approach: send the PDF directly to the AI model and let it do all the work.
 
----
+### Plan
 
-### Page 1: Upload & Analysis View
+**Single change: Rewrite `supabase/functions/analyze-mortgage/index.ts`**
 
-**Left Panel — PDF Viewer**
-- Drag & drop zone for PDF upload (accepts single PDF, max 20MB)
-- After upload, render the PDF using `react-pdf` (pdf.js wrapper) page by page
-- Evidence highlighting: overlay semi-transparent colored rectangles on pages where extracted data was found
-- Clicking "ver evidencia" on any field scrolls to and highlights the relevant page/text
+1. **Remove** the custom `extractTextFromPdf` function entirely (lines 11-80)
+2. **Send the PDF as base64 to Gemini's multimodal API** — Gemini models support PDF/image inputs natively via the `image_url` content type with a `data:application/pdf;base64,...` data URI
+3. **Keep everything else**: the system prompt, tool calling schema, validation logic, and response mapping
 
-**Right Panel — Results**
-- Loading state with progress indicator during analysis
-- Extracted fields displayed as editable cards:
-  - TIN bonificado (%), TIN sin bonificar (%), TAE (%), Cuota final (€/mes)
-  - Each with confidence badge (0–1 scale, color-coded: green ≥0.8, yellow ≥0.5, red <0.5)
-  - "Ver evidencia" link per field
-- Bonificaciones section: list of extracted bonifications with name, cost, weight/impact
-- Alternatives section (if multiple scenarios detected)
-- Review warnings banner if `needs_review: true`
-- Export buttons: "Exportar JSON" + "Copiar al portapapeles"
+The flow becomes:
+```text
+Client sends base64 PDF → Edge function forwards to Gemini as multimodal input → Gemini reads the PDF directly → Returns structured data via tool calling → Validation → Response
+```
 
----
+The key change is in the `messages` payload — instead of sending extracted text as a user message, we send the PDF as a multimodal content part:
 
-### Backend — Edge Function (`analyze-mortgage`)
+```typescript
+messages: [
+  { role: "system", content: SYSTEM_PROMPT },
+  {
+    role: "user",
+    content: [
+      { type: "text", text: `Analiza este documento hipotecario: "${file_name}"` },
+      { type: "image_url", url: { url: `data:application/pdf;base64,${pdf_base64}` } }
+    ]
+  }
+]
+```
 
-1. **Receive PDF** as base64 in request body
-2. **Extract text** from PDF using pdf-parse (npm) for embedded text
-3. **Send extracted text to Lovable AI** (Gemini) with a structured prompt that:
-   - Identifies sections (Condiciones, Tipo de interés, Bonificaciones, etc.)
-   - Extracts TIN/TAE/cuota/bonificaciones using Spanish keyword patterns
-   - Returns the exact JSON schema specified, with evidence (page + text)
-   - Uses tool calling for structured output
-4. **Validate** extracted data (TAE ≥ TIN, bonificado ≤ sin bonificar, count matches items)
-5. **Return** the structured JSON response
+This eliminates the fragile text extraction, supports scanned PDFs (Gemini has built-in OCR), and gives the model full visual context of tables and layouts.
 
----
-
-### Key Technical Decisions
-- **PDF rendering**: `react-pdf` library for the embedded viewer
-- **PDF text extraction**: `pdf-parse` in the edge function (Deno-compatible)
-- **LLM**: Lovable AI (Gemini) via edge function for structured extraction with tool calling
-- **No OCR in v1**: Text-based PDFs only (most bank offers are digital). OCR noted as future enhancement.
-- **No auth/persistence**: Stateless — upload, analyze, export
-
----
-
-### Design
-- Clean, professional UI with a split-pane layout (resizable)
-- Spanish language interface to match the mortgage domain
-- Confidence indicators with intuitive color coding
-- Toast notifications for errors and completion
+### What stays the same
+- CORS headers
+- Tool calling schema for structured output
+- Validation logic (TAE ≥ TIN, bonificado ≤ sin bonificar, count check)
+- Response mapping to the expected JSON schema
+- Rate limit / error handling
 
