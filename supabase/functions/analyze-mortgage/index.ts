@@ -6,79 +6,6 @@ const corsHeaders = {
     "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
 };
 
-// Simple PDF text extraction using raw PDF parsing
-// Extracts text content from PDF binary data by parsing text objects
-function extractTextFromPdf(pdfBytes: Uint8Array): { pages: { pageNum: number; text: string }[]; totalPages: number } {
-  const raw = new TextDecoder("latin1").decode(pdfBytes);
-  const pages: { pageNum: number; text: string }[] = [];
-
-  // Find all stream...endstream blocks and extract text operators
-  const streamRegex = /stream\r?\n([\s\S]*?)endstream/g;
-  let match;
-  const allTexts: string[] = [];
-
-  while ((match = streamRegex.exec(raw)) !== null) {
-    const content = match[1];
-    // Extract text between BT...ET (text objects)
-    const textObjRegex = /BT\s([\s\S]*?)ET/g;
-    let textMatch;
-    while ((textMatch = textObjRegex.exec(content)) !== null) {
-      const textBlock = textMatch[1];
-      // Extract text from Tj, TJ, ' and " operators
-      const tjRegex = /\(([^)]*)\)\s*Tj/g;
-      let tj;
-      while ((tj = tjRegex.exec(textBlock)) !== null) {
-        allTexts.push(tj[1]);
-      }
-      // TJ array operator
-      const tjArrayRegex = /\[(.*?)\]\s*TJ/g;
-      let tjArr;
-      while ((tjArr = tjArrayRegex.exec(textBlock)) !== null) {
-        const items = tjArr[1];
-        const strRegex = /\(([^)]*)\)/g;
-        let s;
-        while ((s = strRegex.exec(items)) !== null) {
-          allTexts.push(s[1]);
-        }
-      }
-    }
-  }
-
-  // Count pages by /Type /Page entries (not /Pages)
-  const pageMatches = raw.match(/\/Type\s*\/Page(?!\s*s)/g);
-  const totalPages = pageMatches ? pageMatches.length : 1;
-
-  // Split extracted text roughly across pages
-  const fullText = allTexts.join(" ");
-  if (fullText.trim()) {
-    // Try to split by form feeds or just assign all to page chunks
-    const chunkSize = Math.max(1, Math.ceil(fullText.length / totalPages));
-    for (let i = 0; i < totalPages; i++) {
-      const start = i * chunkSize;
-      const text = fullText.slice(start, start + chunkSize).trim();
-      if (text) {
-        pages.push({ pageNum: i + 1, text });
-      }
-    }
-  }
-
-  // If we couldn't extract structured text, try a simpler approach
-  if (pages.length === 0) {
-    // Just get all readable text sequences
-    const readableRegex = /[\w\s€%.,;:()áéíóúñüÁÉÍÓÚÑÜ¿?¡!-]{4,}/g;
-    const readable = raw.match(readableRegex);
-    if (readable) {
-      const text = readable
-        .filter((s) => s.trim().length > 3)
-        .join(" ")
-        .replace(/\s+/g, " ");
-      pages.push({ pageNum: 1, text });
-    }
-  }
-
-  return { pages, totalPages };
-}
-
 const SYSTEM_PROMPT = `Eres un experto en análisis de ofertas hipotecarias españolas. Tu tarea es extraer datos estructurados de documentos de ofertas hipotecarias de bancos españoles.
 
 Reglas CRÍTICAS:
@@ -100,7 +27,7 @@ Palabras clave a detectar:
 - "Cuota", "cuota mensual", "importe cuota", "mensualidad"
 - Productos: "nómina", "seguro hogar", "seguro vida", "tarjeta", "plan pensiones", "alarma"
 
-Analiza el texto del PDF y extrae los campos solicitados.`;
+Analiza el documento PDF y extrae los campos solicitados.`;
 
 serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -116,27 +43,6 @@ serve(async (req) => {
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Decode base64 to bytes
-    const binaryStr = atob(pdf_base64);
-    const bytes = new Uint8Array(binaryStr.length);
-    for (let i = 0; i < binaryStr.length; i++) {
-      bytes[i] = binaryStr.charCodeAt(i);
-    }
-
-    // Extract text
-    const { pages, totalPages } = extractTextFromPdf(bytes);
-
-    if (pages.length === 0 || pages.every((p) => p.text.trim().length < 20)) {
-      return new Response(
-        JSON.stringify({
-          error: "No se pudo extraer texto del PDF. Puede que sea un PDF escaneado (sin texto embebido). La función OCR no está disponible en v1.",
-        }),
-        { status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    const pagesText = pages.map((p) => `--- PÁGINA ${p.pageNum} ---\n${p.text}`).join("\n\n");
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
@@ -156,7 +62,10 @@ serve(async (req) => {
           { role: "system", content: SYSTEM_PROMPT },
           {
             role: "user",
-            content: `Analiza este documento hipotecario y extrae todos los campos.\n\nDocumento: "${file_name || "documento.pdf"}"\nTotal de páginas: ${totalPages}\n\n${pagesText}`,
+            content: [
+              { type: "text", text: `Analiza este documento hipotecario y extrae todos los campos. Documento: "${file_name || "documento.pdf"}"` },
+              { type: "image_url", image_url: { url: `data:application/pdf;base64,${pdf_base64}` } },
+            ],
           },
         ],
         tools: [
@@ -350,7 +259,7 @@ serve(async (req) => {
     const result = {
       document_meta: {
         file_name: file_name || "documento.pdf",
-        pages: totalPages,
+        pages: 0,
         language: "es",
       },
       extraction: {
