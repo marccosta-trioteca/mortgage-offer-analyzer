@@ -80,8 +80,15 @@ function FieldCard({
 }) {
   const displayValue = field.value !== null ? String(field.value) : "";
 
+  const isLowConfidence = !isConfirmed && field.confidence < 0.5;
+  const isMedConfidence = !isConfirmed && field.confidence >= 0.5 && field.confidence < 0.8;
+
   return (
-    <Card className="overflow-hidden">
+    <Card className={cn(
+      "overflow-hidden transition-colors",
+      isLowConfidence && "border-destructive/60 bg-destructive/5",
+      isMedConfidence && "border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-950/20",
+    )}>
       <CardHeader className="py-3 px-4">
         <div className="flex items-center justify-between">
           <CardTitle className="text-sm font-medium">{label}</CardTitle>
@@ -96,12 +103,21 @@ function FieldCard({
             <Input
               value={displayValue}
               onChange={(e) => onValueChange(e.target.value)}
-              className="h-8 text-lg font-semibold"
+              className={cn(
+                "h-8 text-lg font-semibold",
+                isLowConfidence && "border-destructive/60 focus-visible:ring-destructive/30",
+              )}
               placeholder="—"
             />
           )}
           <span className="text-sm text-muted-foreground whitespace-nowrap">{unit}</span>
         </div>
+        {isLowConfidence && (
+          <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Confianza baja — revisa este valor
+          </p>
+        )}
         <EvidenceLinks evidence={field.evidence} onShowEvidence={onShowEvidence} />
       </CardContent>
     </Card>
