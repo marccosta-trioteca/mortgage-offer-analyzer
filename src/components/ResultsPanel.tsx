@@ -162,8 +162,41 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
     URL.revokeObjectURL(url);
   };
 
+  const buildCopyText = () => {
+    const lines: string[] = [];
+    const tipo = ext.tipo_hipoteca === "mixta" ? "Mixta" : ext.tipo_hipoteca === "variable" ? "Variable" : "Fija";
+    lines.push(`1. Tipo de hipoteca: ${tipo}`);
+    lines.push(`2. TIN Bonificado: ${ext.tin_bonificado.value !== null ? `${ext.tin_bonificado.value}%` : "—"}`);
+    lines.push(`3. TIN Sin Bonificar: ${ext.tin_sin_bonificar.value !== null ? `${ext.tin_sin_bonificar.value}%` : "—"}`);
+    lines.push(`4. TAE: ${ext.tae.value !== null ? `${ext.tae.value}%` : "—"}`);
+    lines.push(`5. Cuota Final: ${ext.cuota_final.value !== null ? `${ext.cuota_final.value} €/mes` : "—"}`);
+
+    if (ext.bonificaciones.items.length > 0) {
+      lines.push(`6. Bonificaciones (${ext.bonificaciones.count}):`);
+      ext.bonificaciones.items.forEach((b, i) => {
+        let detail = `   ${i + 1}. ${b.name}`;
+        if (b.cost.value !== null) detail += ` — Coste: ${b.cost.value} ${b.cost.unit}${b.cost.period ? `/${b.cost.period}` : ""}`;
+        if (b.weight.value !== null) detail += ` — Impacto: ${b.weight.value > 0 ? "−" : ""}${Math.abs(b.weight.value)} ${b.weight.unit}`;
+        lines.push(detail);
+      });
+    }
+
+    if (ext.alternatives.length > 0) {
+      const nextNum = ext.bonificaciones.items.length > 0 ? 7 : 6;
+      lines.push(`${nextNum}. Escenarios alternativos:`);
+      ext.alternatives.forEach((alt, i) => {
+        let detail = `   ${i + 1}. ${alt.scenario}`;
+        if (alt.tin_bonificado !== null) detail += ` | TIN bonif.: ${alt.tin_bonificado}%`;
+        if (alt.cuota !== null) detail += ` | Cuota: ${alt.cuota} €/mes`;
+        lines.push(detail);
+      });
+    }
+
+    return lines.join("\n");
+  };
+
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(JSON.stringify(editedResult, null, 2));
+    await navigator.clipboard.writeText(buildCopyText());
     toast({ title: "Copiado al portapapeles" });
   };
 
