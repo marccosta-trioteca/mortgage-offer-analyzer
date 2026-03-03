@@ -11,6 +11,8 @@ import {
   Download,
   Eye,
   CheckCircle2,
+  Pencil,
+  Check,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import type { MortgageAnalysisResult, ExtractionField, Evidence } from "@/types/mortgage";
@@ -19,6 +21,7 @@ import { cn } from "@/lib/utils";
 interface ResultsPanelProps {
   result: MortgageAnalysisResult;
   onShowEvidence: (page: number, text: string) => void;
+  onConfirm?: (editedResult: MortgageAnalysisResult) => void;
 }
 
 function ConfidenceBadge({ value }: { value: number }) {
@@ -65,13 +68,17 @@ function FieldCard({
   field,
   unit,
   onShowEvidence,
+  isConfirmed,
+  onValueChange,
 }: {
   label: string;
   field: ExtractionField;
   unit: string;
   onShowEvidence: (page: number, text: string) => void;
+  isConfirmed: boolean;
+  onValueChange: (value: string) => void;
 }) {
-  const [editValue, setEditValue] = useState(field.value !== null ? String(field.value) : "");
+  const displayValue = field.value !== null ? String(field.value) : "";
 
   return (
     <Card className="overflow-hidden">
@@ -83,12 +90,16 @@ function FieldCard({
       </CardHeader>
       <CardContent className="px-4 pb-3 pt-0">
         <div className="flex items-center gap-2">
-          <Input
-            value={editValue}
-            onChange={(e) => setEditValue(e.target.value)}
-            className="h-8 text-lg font-semibold"
-            placeholder="—"
-          />
+          {isConfirmed ? (
+            <span className="text-lg font-semibold text-foreground">{displayValue || "—"}</span>
+          ) : (
+            <Input
+              value={displayValue}
+              onChange={(e) => onValueChange(e.target.value)}
+              className="h-8 text-lg font-semibold"
+              placeholder="—"
+            />
+          )}
           <span className="text-sm text-muted-foreground whitespace-nowrap">{unit}</span>
         </div>
         <EvidenceLinks evidence={field.evidence} onShowEvidence={onShowEvidence} />
@@ -97,21 +108,46 @@ function FieldCard({
   );
 }
 
-export function ResultsPanel({ result, onShowEvidence }: ResultsPanelProps) {
-  const { extraction: ext } = result;
+export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanelProps) {
+  const [isConfirmed, setIsConfirmed] = useState(false);
+  const [editedResult, setEditedResult] = useState<MortgageAnalysisResult>(result);
+  const ext = editedResult.extraction;
+
+  const updateField = (fieldName: keyof typeof ext, value: string) => {
+    setEditedResult((prev) => ({
+      ...prev,
+      extraction: {
+        ...prev.extraction,
+        [fieldName]: {
+          ...(prev.extraction[fieldName] as ExtractionField),
+          value: value === "" ? null : parseFloat(value) || null,
+        },
+      },
+    }));
+  };
+
+  const handleConfirm = () => {
+    setIsConfirmed(true);
+    onConfirm?.(editedResult);
+    toast({ title: "Datos confirmados", description: "Los datos han sido validados correctamente" });
+  };
+
+  const handleEdit = () => {
+    setIsConfirmed(false);
+  };
 
   const handleExportJson = () => {
-    const blob = new Blob([JSON.stringify(result, null, 2)], { type: "application/json" });
+    const blob = new Blob([JSON.stringify(editedResult, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `analisis_${result.document_meta.file_name.replace(".pdf", "")}.json`;
+    a.download = `analisis_${editedResult.document_meta.file_name.replace(".pdf", "")}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
   const handleCopy = async () => {
-    await navigator.clipboard.writeText(JSON.stringify(result, null, 2));
+    await navigator.clipboard.writeText(JSON.stringify(editedResult, null, 2));
     toast({ title: "Copiado al portapapeles" });
   };
 
@@ -123,7 +159,7 @@ export function ResultsPanel({ result, onShowEvidence }: ResultsPanelProps) {
           <div>
             <h2 className="text-lg font-bold text-foreground">Resultados del análisis</h2>
             <p className="text-xs text-muted-foreground">
-              {result.document_meta.file_name} · {result.document_meta.pages} páginas
+              {editedResult.document_meta.file_name} · {editedResult.document_meta.pages} páginas
             </p>
           </div>
           <div className="flex gap-2">
@@ -137,6 +173,29 @@ export function ResultsPanel({ result, onShowEvidence }: ResultsPanelProps) {
             </Button>
           </div>
         </div>
+
+        {/* Status banner */}
+        {isConfirmed ? (
+          <Alert className="border-green-200 bg-green-50 dark:border-green-800 dark:bg-green-950">
+            <CheckCircle2 className="h-4 w-4 text-green-600 dark:text-green-400" />
+            <AlertTitle className="text-green-800 dark:text-green-300">Datos confirmados</AlertTitle>
+            <AlertDescription className="text-green-700 dark:text-green-400">
+              Los datos han sido revisados y aceptados.
+              <Button variant="link" size="sm" onClick={handleEdit} className="ml-2 h-auto p-0 text-green-700 dark:text-green-400">
+                <Pencil className="h-3 w-3 mr-1" />
+                Editar
+              </Button>
+            </AlertDescription>
+          </Alert>
+        ) : (
+          <Alert>
+            <Pencil className="h-4 w-4" />
+            <AlertTitle>Revisión pendiente</AlertTitle>
+            <AlertDescription>
+              Revisa los datos extraídos y edítalos si es necesario antes de confirmar.
+            </AlertDescription>
+          </Alert>
+        )}
 
         {/* Review warnings */}
         {ext.needs_review && (
@@ -155,10 +214,10 @@ export function ResultsPanel({ result, onShowEvidence }: ResultsPanelProps) {
 
         {/* Main fields */}
         <div className="grid grid-cols-2 gap-3">
-          <FieldCard label="TIN Bonificado" field={ext.tin_bonificado} unit="%" onShowEvidence={onShowEvidence} />
-          <FieldCard label="TIN Sin Bonificar" field={ext.tin_sin_bonificar} unit="%" onShowEvidence={onShowEvidence} />
-          <FieldCard label="TAE" field={ext.tae} unit="%" onShowEvidence={onShowEvidence} />
-          <FieldCard label="Cuota Final" field={ext.cuota_final} unit="€/mes" onShowEvidence={onShowEvidence} />
+          <FieldCard label="TIN Bonificado" field={ext.tin_bonificado} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tin_bonificado", v)} />
+          <FieldCard label="TIN Sin Bonificar" field={ext.tin_sin_bonificar} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tin_sin_bonificar", v)} />
+          <FieldCard label="TAE" field={ext.tae} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tae", v)} />
+          <FieldCard label="Cuota Final" field={ext.cuota_final} unit="€/mes" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("cuota_final", v)} />
         </div>
 
         {/* Bonificaciones */}
@@ -222,11 +281,16 @@ export function ResultsPanel({ result, onShowEvidence }: ResultsPanelProps) {
           </Card>
         )}
 
-        {/* Success indicator */}
-        {!ext.needs_review && (
+        {/* Confirm / Success */}
+        {!isConfirmed ? (
+          <Button onClick={handleConfirm} className="w-full" size="lg">
+            <Check className="h-4 w-4 mr-2" />
+            Confirmar datos
+          </Button>
+        ) : (
           <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
             <CheckCircle2 className="h-4 w-4" />
-            <span>Análisis completado sin inconsistencias</span>
+            <span>Análisis completado y confirmado</span>
           </div>
         )}
       </div>
