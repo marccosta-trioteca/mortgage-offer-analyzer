@@ -19,6 +19,14 @@ Reglas CRÍTICAS:
 6. Prioriza el escenario principal que el banco llama "oferta", "condiciones ofertadas", "con bonificación"
 7. Si hay varios escenarios/plazos, pon el principal y el resto en alternatives
 
+TIPOS DE HIPOTECA:
+- Detecta si la oferta es "fija", "variable" o "mixta"
+- Palabras clave para mixta: "hipoteca mixta", "periodo fijo", "periodo variable", "tramo fijo", "tramo variable"
+- Si es MIXTA:
+  * tin_bonificado DEBE ser el TIN del TRAMO FIJO (no el variable)
+  * cuota_final DEBE ser la CUOTA BONIFICADA del tramo fijo
+  * Pon el tramo variable como un escenario en alternatives
+
 Palabras clave a detectar:
 - "TIN", "Tipo de interés nominal", "Tipo nominal anual"
 - "TAE", "Tasa anual equivalente"  
@@ -200,6 +208,11 @@ serve(async (req) => {
                       required: ["scenario"],
                     },
                   },
+                  tipo_hipoteca: {
+                    type: "string",
+                    enum: ["fija", "variable", "mixta"],
+                    description: "Tipo de hipoteca detectado: fija, variable o mixta",
+                  },
                   needs_review: { type: "boolean" },
                   review_notes: { type: "array", items: { type: "string" } },
                 },
@@ -210,6 +223,7 @@ serve(async (req) => {
                   "cuota_final",
                   "bonificaciones",
                   "alternatives",
+                  "tipo_hipoteca",
                   "needs_review",
                   "review_notes",
                 ],
@@ -339,6 +353,7 @@ serve(async (req) => {
             bbox: null,
           })),
         })),
+        tipo_hipoteca: extracted.tipo_hipoteca || "fija",
         needs_review: extracted.needs_review ?? false,
         review_notes: extracted.review_notes || [],
       },

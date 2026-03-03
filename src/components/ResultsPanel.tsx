@@ -157,7 +157,14 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-foreground">Resultados del análisis</h2>
+            <div className="flex items-center gap-2">
+              <h2 className="text-lg font-bold text-foreground">Resultados del análisis</h2>
+              {ext.tipo_hipoteca && (
+                <Badge variant={ext.tipo_hipoteca === "mixta" ? "default" : "secondary"}>
+                  {ext.tipo_hipoteca === "fija" ? "Fija" : ext.tipo_hipoteca === "variable" ? "Variable" : "Mixta"}
+                </Badge>
+              )}
+            </div>
             <p className="text-xs text-muted-foreground">
               {editedResult.document_meta.file_name} · {editedResult.document_meta.pages} páginas
             </p>
