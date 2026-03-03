@@ -58,6 +58,7 @@ export interface MortgageAnalysisResult {
       items: Bonificacion[];
     };
     alternatives: Alternative[];
+    tipo_hipoteca: "fija" | "variable" | "mixta";
     needs_review: boolean;
     review_notes: string[];
   };
