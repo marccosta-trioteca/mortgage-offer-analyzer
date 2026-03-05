@@ -3,7 +3,7 @@ import { Upload, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
-const ACCEPTED_TYPES = ["application/pdf", "image/png"];
+const ACCEPTED_TYPES = ["application/pdf", "image/png", "image/jpeg"];
 
 interface PdfUploadZoneProps {
   onFileSelect: (file: File) => void;
@@ -61,7 +61,7 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
           <Upload className="h-12 w-12 text-muted-foreground" />
           <div className="text-center">
             <p className="text-sm font-medium text-foreground">
-              Arrastra tu PDF o PNG aquí
+              Arrastra tu PDF, PNG o JPG aquí
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               o haz clic para seleccionar (máx. 20MB)
@@ -72,13 +72,13 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
       <label>
         <input
           type="file"
-          accept="application/pdf,image/png"
+          accept="application/pdf,image/png,image/jpeg"
           className="hidden"
           onChange={handleFileInput}
           disabled={isLoading}
         />
         <Button variant="outline" size="sm" asChild disabled={isLoading}>
-          <span>{fileName ? "Cambiar archivo" : "Seleccionar PDF o PNG"}</span>
+          <span>{fileName ? "Cambiar archivo" : "Seleccionar archivo"}</span>
         </Button>
       </label>
     </div>
