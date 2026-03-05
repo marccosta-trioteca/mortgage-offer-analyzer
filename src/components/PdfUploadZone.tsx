@@ -19,7 +19,7 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
       e.preventDefault();
       setIsDragOver(false);
       const file = e.dataTransfer.files[0];
-      if (file?.type === "application/pdf") {
+      if (file && ACCEPTED_TYPES.includes(file.type)) {
         onFileSelect(file);
       }
     },
