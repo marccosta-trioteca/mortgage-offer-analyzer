@@ -74,7 +74,7 @@ serve(async (req) => {
             role: "user",
             content: [
               { type: "text", text: `Analiza este documento hipotecario y extrae todos los campos. Documento: "${file_name || "documento.pdf"}"` },
-              { type: "image_url", image_url: { url: `data:application/pdf;base64,${pdf_base64}` } },
+              { type: "image_url", image_url: { url: `data:${detectedMime};base64,${pdf_base64}` } },
             ],
           },
         ],

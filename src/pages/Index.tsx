@@ -48,7 +48,7 @@ const Index = () => {
       setProgress(30);
 
       const { data, error } = await supabase.functions.invoke("analyze-mortgage", {
-        body: { pdf_base64: base64, file_name: file.name },
+        body: { pdf_base64: base64, file_name: file.name, mime_type: file.type },
       });
 
       setProgress(90);
