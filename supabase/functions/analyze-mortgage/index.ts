@@ -43,11 +43,11 @@ serve(async (req) => {
   }
 
   try {
-    const { pdf_base64, file_name, mime_type } = await req.json();
+    const { pdf_base64, file_name, mime_type, text } = await req.json();
 
-    if (!pdf_base64) {
+    if (!pdf_base64 && !text) {
       return new Response(
-        JSON.stringify({ error: "No se proporcionó el documento" }),
+        JSON.stringify({ error: "No se proporcionó documento ni texto" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
@@ -58,6 +58,14 @@ serve(async (req) => {
     if (!LOVABLE_API_KEY) {
       throw new Error("LOVABLE_API_KEY is not configured");
     }
+
+    // Build user message: either multimodal (file) or text-only
+    const userContent = text
+      ? [{ type: "text", text: `Analiza el siguiente texto de una oferta hipotecaria y extrae todos los campos:\n\n${text}` }]
+      : [
+          { type: "text", text: `Analiza este documento hipotecario y extrae todos los campos. Documento: "${file_name || "documento.pdf"}"` },
+          { type: "image_url", image_url: { url: `data:${detectedMime};base64,${pdf_base64}` } },
+        ];
 
     // Call Lovable AI with tool calling for structured output
     const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
@@ -70,13 +78,7 @@ serve(async (req) => {
         model: "google/gemini-3-flash-preview",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: `Analiza este documento hipotecario y extrae todos los campos. Documento: "${file_name || "documento.pdf"}"` },
-              { type: "image_url", image_url: { url: `data:${detectedMime};base64,${pdf_base64}` } },
-            ],
-          },
+          { role: "user", content: userContent },
         ],
         tools: [
           {
@@ -274,7 +276,7 @@ serve(async (req) => {
     // Build response in the expected schema
     const result = {
       document_meta: {
-        file_name: file_name || "documento.pdf",
+        file_name: file_name || (text ? "texto_pegado" : "documento.pdf"),
         pages: 0,
         language: "es",
       },
