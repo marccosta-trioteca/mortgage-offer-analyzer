@@ -3,6 +3,8 @@ import { Upload, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+const ACCEPTED_TYPES = ["application/pdf", "image/png"];
+
 interface PdfUploadZoneProps {
   onFileSelect: (file: File) => void;
   isLoading: boolean;
@@ -17,7 +19,7 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
       e.preventDefault();
       setIsDragOver(false);
       const file = e.dataTransfer.files[0];
-      if (file?.type === "application/pdf") {
+      if (file && ACCEPTED_TYPES.includes(file.type)) {
         onFileSelect(file);
       }
     },
@@ -52,14 +54,14 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
         <>
           <FileText className="h-12 w-12 text-primary" />
           <p className="text-sm font-medium text-foreground">{fileName}</p>
-          <p className="text-xs text-muted-foreground">PDF cargado correctamente</p>
+          <p className="text-xs text-muted-foreground">Archivo cargado correctamente</p>
         </>
       ) : (
         <>
           <Upload className="h-12 w-12 text-muted-foreground" />
           <div className="text-center">
             <p className="text-sm font-medium text-foreground">
-              Arrastra tu PDF aquí
+              Arrastra tu PDF o PNG aquí
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               o haz clic para seleccionar (máx. 20MB)
@@ -70,13 +72,13 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
       <label>
         <input
           type="file"
-          accept="application/pdf"
+          accept="application/pdf,image/png"
           className="hidden"
           onChange={handleFileInput}
           disabled={isLoading}
         />
         <Button variant="outline" size="sm" asChild disabled={isLoading}>
-          <span>{fileName ? "Cambiar PDF" : "Seleccionar PDF"}</span>
+          <span>{fileName ? "Cambiar archivo" : "Seleccionar PDF o PNG"}</span>
         </Button>
       </label>
     </div>

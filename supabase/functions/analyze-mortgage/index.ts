@@ -43,14 +43,16 @@ serve(async (req) => {
   }
 
   try {
-    const { pdf_base64, file_name } = await req.json();
+    const { pdf_base64, file_name, mime_type } = await req.json();
 
     if (!pdf_base64) {
       return new Response(
-        JSON.stringify({ error: "No se proporcionó el PDF" }),
+        JSON.stringify({ error: "No se proporcionó el documento" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const detectedMime = mime_type || "application/pdf";
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
@@ -72,7 +74,7 @@ serve(async (req) => {
             role: "user",
             content: [
               { type: "text", text: `Analiza este documento hipotecario y extrae todos los campos. Documento: "${file_name || "documento.pdf"}"` },
-              { type: "image_url", image_url: { url: `data:application/pdf;base64,${pdf_base64}` } },
+              { type: "image_url", image_url: { url: `data:${detectedMime};base64,${pdf_base64}` } },
             ],
           },
         ],

@@ -21,6 +21,13 @@ export function PdfViewer({ fileUrl, highlightedPage, highlightedText }: PdfView
   const [scale, setScale] = useState(1.0);
   const pageRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
+  const isPng = fileUrl.startsWith("blob:") === false
+    ? fileUrl.endsWith(".png")
+    : false;
+
+  // Detect PNG from blob by checking the file input context — we pass a flag via URL hash
+  const isImage = fileUrl.includes("#image") || isPng;
+
   useEffect(() => {
     if (highlightedPage && highlightedPage > 0) {
       setCurrentPage(highlightedPage);
@@ -31,51 +38,49 @@ export function PdfViewer({ fileUrl, highlightedPage, highlightedText }: PdfView
     }
   }, [highlightedPage, highlightedText]);
 
+  if (isImage) {
+    return (
+      <div className="flex h-full flex-col">
+        <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
+          <span className="text-xs text-muted-foreground">Imagen</span>
+          <div className="flex items-center gap-1">
+            <Button variant="ghost" size="icon" onClick={() => setScale((s) => Math.max(0.5, s - 0.1))} className="h-8 w-8">
+              <ZoomOut className="h-4 w-4" />
+            </Button>
+            <span className="text-xs text-muted-foreground min-w-[40px] text-center">{Math.round(scale * 100)}%</span>
+            <Button variant="ghost" size="icon" onClick={() => setScale((s) => Math.min(3, s + 0.1))} className="h-8 w-8">
+              <ZoomIn className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+        <ScrollArea className="flex-1">
+          <div className="flex items-center justify-center p-4">
+            <img src={fileUrl.replace("#image", "")} alt="Documento" style={{ transform: `scale(${scale})`, transformOrigin: "top center" }} className="max-w-full shadow-md" />
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col">
       {/* Toolbar */}
       <div className="flex items-center justify-between border-b bg-muted/30 px-3 py-2">
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setCurrentPage((p) => Math.max(1, p - 1))}
-            disabled={currentPage <= 1}
-            className="h-8 w-8"
-          >
+          <Button variant="ghost" size="icon" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1} className="h-8 w-8">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <span className="text-xs text-muted-foreground min-w-[80px] text-center">
-            {currentPage} / {numPages}
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
-            disabled={currentPage >= numPages}
-            className="h-8 w-8"
-          >
+          <span className="text-xs text-muted-foreground min-w-[80px] text-center">{currentPage} / {numPages}</span>
+          <Button variant="ghost" size="icon" onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))} disabled={currentPage >= numPages} className="h-8 w-8">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
         <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setScale((s) => Math.max(0.5, s - 0.1))}
-            className="h-8 w-8"
-          >
+          <Button variant="ghost" size="icon" onClick={() => setScale((s) => Math.max(0.5, s - 0.1))} className="h-8 w-8">
             <ZoomOut className="h-4 w-4" />
           </Button>
-          <span className="text-xs text-muted-foreground min-w-[40px] text-center">
-            {Math.round(scale * 100)}%
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setScale((s) => Math.min(2, s + 0.1))}
-            className="h-8 w-8"
-          >
+          <span className="text-xs text-muted-foreground min-w-[40px] text-center">{Math.round(scale * 100)}%</span>
+          <Button variant="ghost" size="icon" onClick={() => setScale((s) => Math.min(2, s + 0.1))} className="h-8 w-8">
             <ZoomIn className="h-4 w-4" />
           </Button>
         </div>
@@ -87,34 +92,16 @@ export function PdfViewer({ fileUrl, highlightedPage, highlightedText }: PdfView
           <Document
             file={fileUrl}
             onLoadSuccess={({ numPages: n }) => setNumPages(n)}
-            loading={
-              <div className="flex items-center justify-center py-20">
-                <p className="text-sm text-muted-foreground">Cargando PDF...</p>
-              </div>
-            }
-            error={
-              <div className="flex items-center justify-center py-20">
-                <p className="text-sm text-destructive">Error al cargar el PDF</p>
-              </div>
-            }
+            loading={<div className="flex items-center justify-center py-20"><p className="text-sm text-muted-foreground">Cargando PDF...</p></div>}
+            error={<div className="flex items-center justify-center py-20"><p className="text-sm text-destructive">Error al cargar el PDF</p></div>}
           >
             {Array.from({ length: numPages }, (_, i) => i + 1).map((pageNum) => (
               <div
                 key={pageNum}
-                ref={(el) => {
-                  if (el) pageRefs.current.set(pageNum, el);
-                }}
-                className={cn(
-                  "mb-4 shadow-md",
-                  highlightedPage === pageNum && "ring-2 ring-primary ring-offset-2"
-                )}
+                ref={(el) => { if (el) pageRefs.current.set(pageNum, el); }}
+                className={cn("mb-4 shadow-md", highlightedPage === pageNum && "ring-2 ring-primary ring-offset-2")}
               >
-                <Page
-                  pageNumber={pageNum}
-                  scale={scale}
-                  renderTextLayer={true}
-                  renderAnnotationLayer={true}
-                />
+                <Page pageNumber={pageNum} scale={scale} renderTextLayer={true} renderAnnotationLayer={true} />
               </div>
             ))}
           </Document>
