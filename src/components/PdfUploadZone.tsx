@@ -72,7 +72,7 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
       <label>
         <input
           type="file"
-          accept="application/pdf,image/png"
+          accept="application/pdf,image/png,image/jpeg"
           className="hidden"
           onChange={handleFileInput}
           disabled={isLoading}
