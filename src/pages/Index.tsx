@@ -25,7 +25,8 @@ const Index = () => {
       return;
     }
     setFile(f);
-    setFileUrl(URL.createObjectURL(f));
+    const isImage = f.type.startsWith("image/");
+    setFileUrl(URL.createObjectURL(f) + (isImage ? "#image" : ""));
     setResult(null);
     setHighlightedPage(null);
   }, []);
