@@ -78,7 +78,7 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
           disabled={isLoading}
         />
         <Button variant="outline" size="sm" asChild disabled={isLoading}>
-          <span>{fileName ? "Cambiar archivo" : "Seleccionar PDF o PNG"}</span>
+          <span>{fileName ? "Cambiar archivo" : "Seleccionar archivo"}</span>
         </Button>
       </label>
     </div>
