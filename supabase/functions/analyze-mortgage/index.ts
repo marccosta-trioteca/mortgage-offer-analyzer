@@ -276,7 +276,7 @@ serve(async (req) => {
     // Build response in the expected schema
     const result = {
       document_meta: {
-        file_name: file_name || "documento.pdf",
+        file_name: file_name || (text ? "texto_pegado" : "documento.pdf"),
         pages: 0,
         language: "es",
       },
