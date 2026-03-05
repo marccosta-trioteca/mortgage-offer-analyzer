@@ -54,7 +54,7 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
         <>
           <FileText className="h-12 w-12 text-primary" />
           <p className="text-sm font-medium text-foreground">{fileName}</p>
-          <p className="text-xs text-muted-foreground">PDF cargado correctamente</p>
+          <p className="text-xs text-muted-foreground">Archivo cargado correctamente</p>
         </>
       ) : (
         <>
