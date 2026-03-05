@@ -3,6 +3,8 @@ import { Upload, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
+const ACCEPTED_TYPES = ["application/pdf", "image/png"];
+
 interface PdfUploadZoneProps {
   onFileSelect: (file: File) => void;
   isLoading: boolean;
