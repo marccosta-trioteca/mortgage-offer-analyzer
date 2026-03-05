@@ -43,14 +43,16 @@ serve(async (req) => {
   }
 
   try {
-    const { pdf_base64, file_name } = await req.json();
+    const { pdf_base64, file_name, mime_type } = await req.json();
 
     if (!pdf_base64) {
       return new Response(
-        JSON.stringify({ error: "No se proporcionó el PDF" }),
+        JSON.stringify({ error: "No se proporcionó el documento" }),
         { status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
+
+    const detectedMime = mime_type || "application/pdf";
 
     const LOVABLE_API_KEY = Deno.env.get("LOVABLE_API_KEY");
     if (!LOVABLE_API_KEY) {
