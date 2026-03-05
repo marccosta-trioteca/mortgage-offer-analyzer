@@ -61,7 +61,7 @@ export function PdfUploadZone({ onFileSelect, isLoading, fileName }: PdfUploadZo
           <Upload className="h-12 w-12 text-muted-foreground" />
           <div className="text-center">
             <p className="text-sm font-medium text-foreground">
-              Arrastra tu PDF o PNG aquí
+              Arrastra tu PDF, PNG o JPG aquí
             </p>
             <p className="text-xs text-muted-foreground mt-1">
               o haz clic para seleccionar (máx. 20MB)
