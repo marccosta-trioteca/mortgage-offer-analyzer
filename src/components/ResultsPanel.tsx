@@ -393,13 +393,8 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
           </Card>
         )}
 
-        {/* Confirm / Success */}
-        {!isConfirmed ? (
-          <Button onClick={handleConfirm} className="w-full" size="lg">
-            <Check className="h-4 w-4 mr-2" />
-            Confirmar datos
-          </Button>
-        ) : (
+        {/* Confirmed status */}
+        {isConfirmed && (
           <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
             <CheckCircle2 className="h-4 w-4" />
             <span>Análisis completado y confirmado</span>
