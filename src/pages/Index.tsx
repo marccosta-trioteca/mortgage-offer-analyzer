@@ -180,7 +180,7 @@ const Index = () => {
                   {isAnalyzing ? (
                     <div className="space-y-3">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                      <p>Analizando texto...</p>
+                      <p>Analizando texto con 3 modelos IA...</p>
                     </div>
                   ) : (
                     <p>Haz clic en "Analizar" para extraer los datos de la hipoteca</p>
@@ -211,8 +211,8 @@ const Index = () => {
                   {isAnalyzing ? (
                     <div className="space-y-3">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                      <p>Analizando documento...</p>
-                      <p className="text-xs">Extrayendo texto y procesando con IA</p>
+                      <p>Analizando documento con 3 modelos IA...</p>
+                      <p className="text-xs">GPT-5 · Gemini Pro · Gemini Flash</p>
                     </div>
                   ) : (
                     <p>Haz clic en "Analizar" para extraer los datos de la hipoteca</p>
