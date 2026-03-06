@@ -57,15 +57,63 @@ const tipoLabel = (t: string) =>
   t === "fija" ? "Fija" : t === "variable" ? "Variable" : "Mixta";
 
 export function ComparisonView({ items, onClose }: ComparisonViewProps) {
+  const contentRef = useRef<HTMLDivElement>(null);
+  const [exporting, setExporting] = useState(false);
+
   if (items.length === 0) return null;
 
-  // For 2 items, use the side-by-side layout; for >2, use table
-  const fields: { key: string; label: string; unit: string; lowerBetter: boolean }[] = [
-    { key: "tin_bonificado", label: "TIN Bonificado", unit: "%", lowerBetter: true },
-    { key: "tin_sin_bonificar", label: "TIN Sin Bonificar", unit: "%", lowerBetter: true },
-    { key: "tae", label: "TAE", unit: "%", lowerBetter: true },
-    { key: "cuota_final", label: "Cuota Final", unit: "€/mes", lowerBetter: true },
-  ];
+  const exportAsImage = async () => {
+    if (!contentRef.current) return;
+    setExporting(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const canvas = await html2canvas(contentRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+      });
+      const link = document.createElement("a");
+      link.download = `comparacion_hipotecas_${Date.now()}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+      toast({ title: "Imagen descargada" });
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error al exportar imagen", variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  const exportAsPdf = async () => {
+    if (!contentRef.current) return;
+    setExporting(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const { jsPDF } = await import("jspdf");
+      const canvas = await html2canvas(contentRef.current, {
+        backgroundColor: "#ffffff",
+        scale: 2,
+        useCORS: true,
+      });
+      const imgData = canvas.toDataURL("image/png");
+      const imgW = canvas.width;
+      const imgH = canvas.height;
+      const pdfW = 210; // A4 mm
+      const pdfH = (imgH * pdfW) / imgW;
+      const pdf = new jsPDF("p", "mm", [pdfW, Math.max(pdfH, 297)]);
+      pdf.addImage(imgData, "PNG", 0, 0, pdfW, pdfH);
+      pdf.save(`comparacion_hipotecas_${Date.now()}.pdf`);
+      toast({ title: "PDF descargado" });
+    } catch (e) {
+      console.error(e);
+      toast({ title: "Error al exportar PDF", variant: "destructive" });
+    } finally {
+      setExporting(false);
+    }
+  };
+
+  // ... keep existing code for fields array
 
   return (
     <div className="flex h-full flex-col bg-background">
@@ -74,9 +122,19 @@ export function ComparisonView({ items, onClose }: ComparisonViewProps) {
         <h2 className="text-base font-bold text-foreground">
           Comparación de {items.length} ofertas
         </h2>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          <X className="h-4 w-4" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="outline" size="sm" onClick={exportAsImage} disabled={exporting} className="gap-1.5">
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Image className="h-3.5 w-3.5" />}
+            PNG
+          </Button>
+          <Button variant="outline" size="sm" onClick={exportAsPdf} disabled={exporting} className="gap-1.5">
+            {exporting ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
+            PDF
+          </Button>
+          <Button variant="ghost" size="sm" onClick={onClose}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
       </div>
 
       <ScrollArea className="flex-1">
