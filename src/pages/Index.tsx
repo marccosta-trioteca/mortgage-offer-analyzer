@@ -216,18 +216,21 @@ const Index = () => {
           <FileSearch className="h-5 w-5 text-primary" />
           <h1 className="text-base font-bold text-foreground">Analizador de Hipotecas</h1>
         </div>
-        {hasInput && (
-          <Button onClick={handleAnalyze} disabled={isAnalyzing} size="sm">
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                Analizando...
-              </>
-            ) : (
-              "Analizar"
-            )}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <AnalysisHistory onLoad={handleLoadFromHistory} />
+          {hasInput && (
+            <Button onClick={handleAnalyze} disabled={isAnalyzing} size="sm">
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  Analizando...
+                </>
+              ) : (
+                "Analizar"
+              )}
+            </Button>
+          )}
+        </div>
       </header>
 
       {/* Progress bar */}
