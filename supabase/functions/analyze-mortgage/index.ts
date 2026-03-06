@@ -349,182 +349,206 @@ serve(async (req) => {
           { type: "image_url", image_url: { url: `data:${detectedMime};base64,${pdf_base64}` } },
         ];
 
-    // Call all 3 models in parallel
-    console.log("Calling 3 models in parallel...");
-    const modelResults = await Promise.allSettled(
-      MODELS.map((m) => callModel(m.id, userContent, LOVABLE_API_KEY))
-    );
+    // Use SSE to stream progress
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        const sendEvent = (event: string, data: any) => {
+          controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
+        };
 
-    // Check for rate limit / payment errors
-    for (const r of modelResults) {
-      if (r.status === "rejected") {
-        if (r.reason?.message === "RATE_LIMIT") {
-          return new Response(JSON.stringify({ error: "Límite de peticiones excedido, inténtelo más tarde." }), {
-            status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-        if (r.reason?.message === "PAYMENT_REQUIRED") {
-          return new Response(JSON.stringify({ error: "Créditos agotados, añada fondos a su workspace." }), {
-            status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
-          });
-        }
-      }
-    }
+        // Send initial status
+        sendEvent("progress", { models: MODELS.map((m) => ({ label: m.label, status: "pending" })) });
 
-    // Collect successful results
-    const successResults: { label: string; extracted: any }[] = [];
-    const failedModels: string[] = [];
-    modelResults.forEach((r, i) => {
-      if (r.status === "fulfilled") {
-        successResults.push({ label: MODELS[i].label, extracted: r.value });
-      } else {
-        failedModels.push(MODELS[i].label);
-        console.error(`Model ${MODELS[i].label} failed:`, r.reason);
-      }
+        // Call all 3 models in parallel, streaming progress as each completes
+        const modelResults: (PromiseSettledResult<any>)[] = new Array(MODELS.length);
+        const modelPromises = MODELS.map((m, i) =>
+          callModel(m.id, userContent, LOVABLE_API_KEY)
+            .then((result) => {
+              modelResults[i] = { status: "fulfilled", value: result };
+              sendEvent("model_complete", { index: i, label: m.label, status: "success" });
+            })
+            .catch((err) => {
+              modelResults[i] = { status: "rejected", reason: err };
+              sendEvent("model_complete", { index: i, label: m.label, status: "error", error: err.message });
+            })
+        );
+
+        await Promise.all(modelPromises);
+
+        // Check for rate limit / payment errors
+        for (const r of modelResults) {
+          if (r.status === "rejected") {
+            if (r.reason?.message === "RATE_LIMIT") {
+              sendEvent("error", { error: "Límite de peticiones excedido, inténtelo más tarde.", status: 429 });
+              controller.close();
+              return;
+            }
+            if (r.reason?.message === "PAYMENT_REQUIRED") {
+              sendEvent("error", { error: "Créditos agotados, añada fondos a su workspace.", status: 402 });
+              controller.close();
+              return;
+            }
+          }
+        }
+
+        // Collect successful results
+        const successResults: { label: string; extracted: any }[] = [];
+        const failedModels: string[] = [];
+        modelResults.forEach((r, i) => {
+          if (r.status === "fulfilled") {
+            successResults.push({ label: MODELS[i].label, extracted: r.value });
+          } else {
+            failedModels.push(MODELS[i].label);
+          }
+        });
+
+        if (successResults.length === 0) {
+          sendEvent("error", { error: "Los 3 modelos fallaron al analizar el documento" });
+          controller.close();
+          return;
+        }
+
+        sendEvent("progress", { phase: "consensus", message: "Calculando consenso..." });
+
+        // If only 1 model succeeded
+        if (successResults.length === 1) {
+          const ext = buildExtraction(successResults[0].extracted);
+          ext.needs_review = true;
+          ext.review_notes.push(`Solo respondió 1 modelo (${successResults[0].label}). Modelos fallidos: ${failedModels.join(", ")}`);
+
+          sendEvent("result", {
+            document_meta: { file_name: file_name || (text ? "texto_pegado" : "documento.pdf"), pages: 0, language: "es" },
+            extraction: ext,
+            consensus: {
+              status: "none",
+              details: {
+                tin_bonificado: { status: "none", models_agreed: [successResults[0].label], value: ext.tin_bonificado.value },
+                tin_sin_bonificar: { status: "none", models_agreed: [successResults[0].label], value: ext.tin_sin_bonificar.value },
+                tae: { status: "none", models_agreed: [successResults[0].label], value: ext.tae.value },
+                cuota_final: { status: "none", models_agreed: [successResults[0].label], value: ext.cuota_final.value },
+                tipo_hipoteca: { status: "none", models_agreed: [successResults[0].label] },
+              },
+              models_used: successResults.map((r) => r.label),
+              models_failed: failedModels,
+            },
+          });
+          controller.close();
+          return;
+        }
+
+        // Build consensus
+        const KEY_FIELDS = ["tin_bonificado", "tin_sin_bonificar", "tae", "cuota_final"] as const;
+        const fieldConsensus: Record<string, FieldConsensus> = {};
+        const padded = successResults.length === 2
+          ? [...successResults, successResults[1]]
+          : successResults;
+
+        for (const field of KEY_FIELDS) {
+          const tolerance = field === "cuota_final" ? 1.0 : 0.05;
+          fieldConsensus[field] = getFieldConsensus(
+            padded.map((r) => ({ label: r.label, value: r.extracted[field]?.value ?? null })),
+            tolerance
+          );
+        }
+
+        const tipos = padded.map((r) => r.extracted.tipo_hipoteca || "fija");
+        const tipoConsensus = tipos[0] === tipos[1] && tipos[1] === tipos[2]
+          ? { status: "full" as const, models_agreed: padded.map((r) => r.label) }
+          : tipos[0] === tipos[1]
+            ? { status: "partial" as const, models_agreed: [padded[0].label, padded[1].label] }
+            : tipos[0] === tipos[2]
+              ? { status: "partial" as const, models_agreed: [padded[0].label, padded[2].label] }
+              : tipos[1] === tipos[2]
+                ? { status: "partial" as const, models_agreed: [padded[1].label, padded[2].label] }
+                : { status: "none" as const, models_agreed: [] };
+
+        const allStatuses = [...Object.values(fieldConsensus).map((c) => c.status), tipoConsensus.status];
+        const overallStatus = allStatuses.every((s) => s === "full")
+          ? "full"
+          : allStatuses.some((s) => s === "none")
+            ? "none"
+            : "partial";
+
+        const baseExtracted = successResults[0].extracted;
+        const finalExtraction = buildExtraction(baseExtracted);
+
+        for (const field of KEY_FIELDS) {
+          const c = fieldConsensus[field];
+          (finalExtraction as any)[field].value = c.value;
+        }
+
+        if (tipoConsensus.status !== "none") {
+          const agreedModel = successResults.find((r) => tipoConsensus.models_agreed.includes(r.label));
+          if (agreedModel) finalExtraction.tipo_hipoteca = agreedModel.extracted.tipo_hipoteca || "fija";
+        }
+
+        const reviewNotes = [...finalExtraction.review_notes];
+        if (failedModels.length > 0) {
+          reviewNotes.push(`Modelos fallidos: ${failedModels.join(", ")}`);
+        }
+
+        for (const field of KEY_FIELDS) {
+          const c = fieldConsensus[field];
+          if (c.status === "partial") {
+            const disagreeing = padded
+              .filter((r) => !c.models_agreed.includes(r.label))
+              .map((r) => `${r.label}: ${r.extracted[field]?.value ?? "null"}`);
+            reviewNotes.push(`${field}: acuerdo parcial (${c.models_agreed.join(" + ")}). Discrepa: ${disagreeing.join(", ")}`);
+          } else if (c.status === "none") {
+            const allVals = padded.map((r) => `${r.label}: ${r.extracted[field]?.value ?? "null"}`);
+            reviewNotes.push(`${field}: sin acuerdo entre modelos (${allVals.join(", ")})`);
+          }
+        }
+
+        if (overallStatus !== "full") finalExtraction.needs_review = true;
+        finalExtraction.review_notes = reviewNotes;
+
+        if (finalExtraction.tae.value !== null && finalExtraction.tin_bonificado.value !== null && finalExtraction.tae.value < finalExtraction.tin_bonificado.value) {
+          reviewNotes.push("Inconsistencia: TAE es menor que TIN bonificado");
+          finalExtraction.needs_review = true;
+        }
+        if (finalExtraction.tin_bonificado.value !== null && finalExtraction.tin_sin_bonificar.value !== null && finalExtraction.tin_bonificado.value > finalExtraction.tin_sin_bonificar.value) {
+          reviewNotes.push("Inconsistencia: TIN bonificado es mayor que TIN sin bonificar");
+          finalExtraction.needs_review = true;
+        }
+        if (finalExtraction.bonificaciones.count !== finalExtraction.bonificaciones.items.length) {
+          reviewNotes.push(`Inconsistencia: count (${finalExtraction.bonificaciones.count}) ≠ items.length (${finalExtraction.bonificaciones.items.length})`);
+          finalExtraction.bonificaciones.count = finalExtraction.bonificaciones.items.length;
+        }
+
+        sendEvent("result", {
+          document_meta: {
+            file_name: file_name || (text ? "texto_pegado" : "documento.pdf"),
+            pages: 0,
+            language: "es",
+          },
+          extraction: finalExtraction,
+          consensus: {
+            status: overallStatus,
+            details: {
+              tin_bonificado: fieldConsensus.tin_bonificado,
+              tin_sin_bonificar: fieldConsensus.tin_sin_bonificar,
+              tae: fieldConsensus.tae,
+              cuota_final: fieldConsensus.cuota_final,
+              tipo_hipoteca: tipoConsensus,
+            },
+            models_used: successResults.map((r) => r.label),
+            models_failed: failedModels,
+          },
+        });
+
+        controller.close();
+      },
     });
 
-    if (successResults.length === 0) {
-      throw new Error("Los 3 modelos fallaron al analizar el documento");
-    }
-
-    // If only 1 model succeeded, return it with a warning
-    if (successResults.length === 1) {
-      const ext = buildExtraction(successResults[0].extracted);
-      ext.needs_review = true;
-      ext.review_notes.push(`Solo respondió 1 modelo (${successResults[0].label}). Modelos fallidos: ${failedModels.join(", ")}`);
-
-      return new Response(JSON.stringify({
-        document_meta: { file_name: file_name || (text ? "texto_pegado" : "documento.pdf"), pages: 0, language: "es" },
-        extraction: ext,
-        consensus: {
-          status: "none",
-          details: {
-            tin_bonificado: { status: "none", models_agreed: [successResults[0].label], value: ext.tin_bonificado.value },
-            tin_sin_bonificar: { status: "none", models_agreed: [successResults[0].label], value: ext.tin_sin_bonificar.value },
-            tae: { status: "none", models_agreed: [successResults[0].label], value: ext.tae.value },
-            cuota_final: { status: "none", models_agreed: [successResults[0].label], value: ext.cuota_final.value },
-            tipo_hipoteca: { status: "none", models_agreed: [successResults[0].label] },
-          },
-          models_used: successResults.map((r) => r.label),
-          models_failed: failedModels,
-        },
-      }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
-    }
-
-    // Build consensus for key fields
-    const KEY_FIELDS = ["tin_bonificado", "tin_sin_bonificar", "tae", "cuota_final"] as const;
-    const fieldConsensus: Record<string, FieldConsensus> = {};
-
-    // Pad to 3 results for consensus logic (duplicate last if only 2)
-    const padded = successResults.length === 2
-      ? [...successResults, successResults[1]]
-      : successResults;
-
-    for (const field of KEY_FIELDS) {
-      const tolerance = field === "cuota_final" ? 1.0 : 0.05;
-      fieldConsensus[field] = getFieldConsensus(
-        padded.map((r) => ({ label: r.label, value: r.extracted[field]?.value ?? null })),
-        tolerance
-      );
-    }
-
-    // Tipo hipoteca consensus
-    const tipos = padded.map((r) => r.extracted.tipo_hipoteca || "fija");
-    const tipoConsensus = tipos[0] === tipos[1] && tipos[1] === tipos[2]
-      ? { status: "full" as const, models_agreed: padded.map((r) => r.label) }
-      : tipos[0] === tipos[1]
-        ? { status: "partial" as const, models_agreed: [padded[0].label, padded[1].label] }
-        : tipos[0] === tipos[2]
-          ? { status: "partial" as const, models_agreed: [padded[0].label, padded[2].label] }
-          : tipos[1] === tipos[2]
-            ? { status: "partial" as const, models_agreed: [padded[1].label, padded[2].label] }
-            : { status: "none" as const, models_agreed: [] };
-
-    // Determine overall consensus
-    const allStatuses = [...Object.values(fieldConsensus).map((c) => c.status), tipoConsensus.status];
-    const overallStatus = allStatuses.every((s) => s === "full")
-      ? "full"
-      : allStatuses.some((s) => s === "none")
-        ? "none"
-        : "partial";
-
-    // Build the final result using consensus values for key fields, and first model's data for the rest
-    const baseExtracted = successResults[0].extracted;
-    const finalExtraction = buildExtraction(baseExtracted);
-
-    // Override key fields with consensus values
-    for (const field of KEY_FIELDS) {
-      const c = fieldConsensus[field];
-      (finalExtraction as any)[field].value = c.value;
-    }
-
-    // Override tipo
-    if (tipoConsensus.status !== "none") {
-      const agreedModel = successResults.find((r) => tipoConsensus.models_agreed.includes(r.label));
-      if (agreedModel) finalExtraction.tipo_hipoteca = agreedModel.extracted.tipo_hipoteca || "fija";
-    }
-
-    // Add review notes based on consensus
-    const reviewNotes = [...finalExtraction.review_notes];
-    if (failedModels.length > 0) {
-      reviewNotes.push(`Modelos fallidos: ${failedModels.join(", ")}`);
-    }
-
-    for (const field of KEY_FIELDS) {
-      const c = fieldConsensus[field];
-      if (c.status === "partial") {
-        const disagreeing = padded
-          .filter((r) => !c.models_agreed.includes(r.label))
-          .map((r) => `${r.label}: ${r.extracted[field]?.value ?? "null"}`);
-        reviewNotes.push(`${field}: acuerdo parcial (${c.models_agreed.join(" + ")}). Discrepa: ${disagreeing.join(", ")}`);
-      } else if (c.status === "none") {
-        const allVals = padded.map((r) => `${r.label}: ${r.extracted[field]?.value ?? "null"}`);
-        reviewNotes.push(`${field}: sin acuerdo entre modelos (${allVals.join(", ")})`);
-      }
-    }
-
-    if (overallStatus !== "full") {
-      finalExtraction.needs_review = true;
-    }
-    finalExtraction.review_notes = reviewNotes;
-
-    // Validation
-    if (finalExtraction.tae.value !== null && finalExtraction.tin_bonificado.value !== null && finalExtraction.tae.value < finalExtraction.tin_bonificado.value) {
-      reviewNotes.push("Inconsistencia: TAE es menor que TIN bonificado");
-      finalExtraction.needs_review = true;
-    }
-    if (finalExtraction.tin_bonificado.value !== null && finalExtraction.tin_sin_bonificar.value !== null && finalExtraction.tin_bonificado.value > finalExtraction.tin_sin_bonificar.value) {
-      reviewNotes.push("Inconsistencia: TIN bonificado es mayor que TIN sin bonificar");
-      finalExtraction.needs_review = true;
-    }
-    if (finalExtraction.bonificaciones.count !== finalExtraction.bonificaciones.items.length) {
-      reviewNotes.push(`Inconsistencia: count (${finalExtraction.bonificaciones.count}) ≠ items.length (${finalExtraction.bonificaciones.items.length})`);
-      finalExtraction.bonificaciones.count = finalExtraction.bonificaciones.items.length;
-    }
-
-    const result = {
-      document_meta: {
-        file_name: file_name || (text ? "texto_pegado" : "documento.pdf"),
-        pages: 0,
-        language: "es",
+    return new Response(stream, {
+      headers: {
+        ...corsHeaders,
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        "Connection": "keep-alive",
       },
-      extraction: finalExtraction,
-      consensus: {
-        status: overallStatus,
-        details: {
-          tin_bonificado: fieldConsensus.tin_bonificado,
-          tin_sin_bonificar: fieldConsensus.tin_sin_bonificar,
-          tae: fieldConsensus.tae,
-          cuota_final: fieldConsensus.cuota_final,
-          tipo_hipoteca: tipoConsensus,
-        },
-        models_used: successResults.map((r) => r.label),
-        models_failed: failedModels,
-      },
-    };
-
-    return new Response(JSON.stringify(result), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
   } catch (e) {
     console.error("analyze-mortgage error:", e);
