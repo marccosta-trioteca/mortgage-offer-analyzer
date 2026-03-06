@@ -15,8 +15,9 @@ import {
   Check,
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
-import type { MortgageAnalysisResult, ExtractionField, Evidence } from "@/types/mortgage";
+import type { MortgageAnalysisResult, ExtractionField, Evidence, FieldConsensusDetail } from "@/types/mortgage";
 import { cn } from "@/lib/utils";
+import { ConsensusBar } from "@/components/ConsensusBar";
 
 interface ResultsPanelProps {
   result: MortgageAnalysisResult;
