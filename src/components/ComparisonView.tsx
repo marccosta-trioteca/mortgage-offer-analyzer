@@ -1,11 +1,13 @@
+import { useRef, useState } from "react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { X, ArrowUp, ArrowDown, Minus, Trophy } from "lucide-react";
+import { X, ArrowUp, ArrowDown, Minus, Trophy, Download, Image, Loader2 } from "lucide-react";
 import type { MortgageAnalysisResult, ExtractionField } from "@/types/mortgage";
 import { cn } from "@/lib/utils";
+import { toast } from "@/hooks/use-toast";
 
 export interface ComparisonRecord {
   result: MortgageAnalysisResult;
