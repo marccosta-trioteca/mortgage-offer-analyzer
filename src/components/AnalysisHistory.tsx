@@ -7,6 +7,7 @@ import { History, FileText, Trash2, GitCompareArrows } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
+import { cn } from "@/lib/utils";
 import type { MortgageAnalysisResult } from "@/types/mortgage";
 
 interface AnalysisRecord {
@@ -220,8 +221,4 @@ export function AnalysisHistory({ onLoad, onCompare }: AnalysisHistoryProps) {
       </SheetContent>
     </Sheet>
   );
-}
-
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
 }
