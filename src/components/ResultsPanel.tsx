@@ -169,6 +169,7 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
   const [isConfirmed, setIsConfirmed] = useState(false);
   const [editedResult, setEditedResult] = useState<MortgageAnalysisResult>(result);
   const ext = editedResult.extraction;
+  const consensus = editedResult.consensus;
 
   const updateField = (fieldName: keyof typeof ext, value: string) => {
     setEditedResult((prev) => ({
