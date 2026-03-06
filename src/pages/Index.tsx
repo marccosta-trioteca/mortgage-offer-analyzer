@@ -167,9 +167,24 @@ const Index = () => {
     }
   }, [file, pastedText, inputMode, hasInput]);
 
-  const handleShowEvidence = useCallback((page: number, text: string) => {
-    setHighlightedPage(page);
-    setHighlightedText(text);
+  const handleConfirmAndSave = useCallback(async (editedResult: MortgageAnalysisResult) => {
+    try {
+      const { error } = await supabase.from("analyses").insert({
+        file_name: editedResult.document_meta.file_name,
+        mime_type: file?.type || null,
+        result: editedResult as unknown as Record<string, unknown>,
+      });
+      if (error) throw error;
+      toast({ title: "Guardado", description: "Análisis guardado en el historial" });
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: "Error al guardar", description: e.message, variant: "destructive" });
+    }
+  }, [file]);
+
+  const handleLoadFromHistory = useCallback((loadedResult: MortgageAnalysisResult, fileName: string) => {
+    setResult(loadedResult);
+    setInputMode("text");
   }, []);
 
   const handleClearText = () => {
