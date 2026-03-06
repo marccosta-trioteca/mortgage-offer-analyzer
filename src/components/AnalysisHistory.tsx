@@ -222,7 +222,3 @@ export function AnalysisHistory({ onLoad, onCompare }: AnalysisHistoryProps) {
     </Sheet>
   );
 }
-
-function cn(...classes: (string | boolean | undefined)[]) {
-  return classes.filter(Boolean).join(" ");
-}
