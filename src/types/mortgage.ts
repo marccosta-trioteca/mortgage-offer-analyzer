@@ -42,6 +42,25 @@ export interface Alternative {
   evidence: Evidence[];
 }
 
+export interface FieldConsensusDetail {
+  status: "full" | "partial" | "none";
+  models_agreed: string[];
+  value?: number | null;
+}
+
+export interface ConsensusInfo {
+  status: "full" | "partial" | "none";
+  details: {
+    tin_bonificado: FieldConsensusDetail;
+    tin_sin_bonificar: FieldConsensusDetail;
+    tae: FieldConsensusDetail;
+    cuota_final: FieldConsensusDetail;
+    tipo_hipoteca: FieldConsensusDetail;
+  };
+  models_used: string[];
+  models_failed: string[];
+}
+
 export interface MortgageAnalysisResult {
   document_meta: {
     file_name: string;
@@ -62,4 +81,5 @@ export interface MortgageAnalysisResult {
     needs_review: boolean;
     review_notes: string[];
   };
+  consensus?: ConsensusInfo;
 }
