@@ -169,11 +169,11 @@ const Index = () => {
 
   const handleConfirmAndSave = useCallback(async (editedResult: MortgageAnalysisResult) => {
     try {
-      const { error } = await supabase.from("analyses").insert({
+      const { error } = await supabase.from("analyses").insert([{
         file_name: editedResult.document_meta.file_name,
         mime_type: file?.type || null,
         result: editedResult as unknown as Record<string, unknown>,
-      });
+      }]);
       if (error) throw error;
       toast({ title: "Guardado", description: "Análisis guardado en el historial" });
     } catch (e: any) {
