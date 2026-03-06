@@ -15,7 +15,7 @@ import { supabase } from "@/integrations/supabase/client";
 import type { MortgageAnalysisResult } from "@/types/mortgage";
 
 const INITIAL_MODELS: ModelStatus[] = [
-  { label: "GPT-5", status: "running" },
+  { label: "Gemini 3 Flash", status: "running" },
   { label: "Gemini Pro", status: "running" },
   { label: "Gemini Flash", status: "running" },
 ];
