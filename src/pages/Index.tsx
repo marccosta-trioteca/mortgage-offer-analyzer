@@ -180,7 +180,7 @@ const Index = () => {
                   {isAnalyzing ? (
                     <div className="space-y-3">
                       <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                      <p>Analizando texto...</p>
+                      <p>Analizando texto con 3 modelos IA...</p>
                     </div>
                   ) : (
                     <p>Haz clic en "Analizar" para extraer los datos de la hipoteca</p>
