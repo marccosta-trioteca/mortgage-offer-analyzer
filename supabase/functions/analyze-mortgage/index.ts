@@ -181,7 +181,7 @@ const TOOL_SCHEMA = {
 };
 
 const MODELS = [
-  { id: "openai/gpt-5", label: "GPT-5" },
+  { id: "google/gemini-3-flash-preview", label: "Gemini 3 Flash" },
   { id: "google/gemini-2.5-pro", label: "Gemini Pro" },
   { id: "google/gemini-2.5-flash", label: "Gemini Flash" },
 ];
