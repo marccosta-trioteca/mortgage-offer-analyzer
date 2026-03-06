@@ -187,6 +187,11 @@ const Index = () => {
     setInputMode("text");
   }, []);
 
+  const handleShowEvidence = useCallback((page: number, text: string) => {
+    setHighlightedPage(page);
+    setHighlightedText(text);
+  }, []);
+
   const handleClearText = () => {
     setPastedText("");
     setResult(null);
