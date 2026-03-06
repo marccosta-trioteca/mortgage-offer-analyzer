@@ -6,7 +6,8 @@ import { PdfViewer } from "@/components/PdfViewer";
 import { TextPasteZone } from "@/components/TextPasteZone";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { ModelProgress, type ModelStatus } from "@/components/ModelProgress";
-import { AnalysisHistory } from "@/components/AnalysisHistory";
+import { AnalysisHistory, type ComparisonItem } from "@/components/AnalysisHistory";
+import { ComparisonView } from "@/components/ComparisonView";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileSearch, Upload, ClipboardPaste } from "lucide-react";
@@ -31,6 +32,7 @@ const Index = () => {
   const [highlightedText, setHighlightedText] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [modelStatuses, setModelStatuses] = useState<ModelStatus[]>(INITIAL_MODELS);
+  const [comparison, setComparison] = useState<[ComparisonItem, ComparisonItem] | null>(null);
 
   const hasInput = inputMode === "file" ? !!file : pastedText.trim().length > 0;
 
@@ -187,6 +189,10 @@ const Index = () => {
     setInputMode("text");
   }, []);
 
+  const handleCompare = useCallback((items: [ComparisonItem, ComparisonItem]) => {
+    setComparison(items);
+  }, []);
+
   const handleShowEvidence = useCallback((page: number, text: string) => {
     setHighlightedPage(page);
     setHighlightedText(text);
@@ -208,6 +214,14 @@ const Index = () => {
     </div>
   );
 
+  if (comparison) {
+    return (
+      <div className="flex h-screen flex-col bg-background">
+        <ComparisonView items={comparison} onClose={() => setComparison(null)} />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen flex-col bg-background">
       {/* Top bar */}
@@ -217,7 +231,7 @@ const Index = () => {
           <h1 className="text-base font-bold text-foreground">Analizador de Hipotecas</h1>
         </div>
         <div className="flex items-center gap-2">
-          <AnalysisHistory onLoad={handleLoadFromHistory} />
+          <AnalysisHistory onLoad={handleLoadFromHistory} onCompare={handleCompare} />
           {hasInput && (
             <Button onClick={handleAnalyze} disabled={isAnalyzing} size="sm">
               {isAnalyzing ? (

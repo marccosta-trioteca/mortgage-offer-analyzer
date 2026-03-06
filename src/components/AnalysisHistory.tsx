@@ -3,9 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { History, FileText, Trash2 } from "lucide-react";
+import { History, FileText, Trash2, GitCompareArrows } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { MortgageAnalysisResult } from "@/types/mortgage";
 
 interface AnalysisRecord {
@@ -16,14 +17,23 @@ interface AnalysisRecord {
   created_at: string;
 }
 
-interface AnalysisHistoryProps {
-  onLoad: (result: MortgageAnalysisResult, fileName: string) => void;
+export interface ComparisonItem {
+  result: MortgageAnalysisResult;
+  fileName: string;
+  date: string;
 }
 
-export function AnalysisHistory({ onLoad }: AnalysisHistoryProps) {
+interface AnalysisHistoryProps {
+  onLoad: (result: MortgageAnalysisResult, fileName: string) => void;
+  onCompare?: (items: [ComparisonItem, ComparisonItem]) => void;
+}
+
+export function AnalysisHistory({ onLoad, onCompare }: AnalysisHistoryProps) {
   const [open, setOpen] = useState(false);
   const [records, setRecords] = useState<AnalysisRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
 
   const fetchRecords = async () => {
     setLoading(true);
@@ -42,10 +52,15 @@ export function AnalysisHistory({ onLoad }: AnalysisHistoryProps) {
   };
 
   useEffect(() => {
-    if (open) fetchRecords();
+    if (open) {
+      fetchRecords();
+      setCompareMode(false);
+      setSelected(new Set());
+    }
   }, [open]);
 
   const handleLoad = (record: AnalysisRecord) => {
+    if (compareMode) return;
     onLoad(record.result, record.file_name || "análisis guardado");
     setOpen(false);
     toast({ title: "Análisis cargado" });
@@ -58,8 +73,37 @@ export function AnalysisHistory({ onLoad }: AnalysisHistoryProps) {
       toast({ title: "Error al eliminar", variant: "destructive" });
     } else {
       setRecords((prev) => prev.filter((r) => r.id !== id));
+      setSelected((prev) => { const n = new Set(prev); n.delete(id); return n; });
       toast({ title: "Análisis eliminado" });
     }
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else {
+        if (next.size >= 2) return prev;
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const handleCompare = () => {
+    if (selected.size !== 2 || !onCompare) return;
+    const ids = Array.from(selected);
+    const items = ids.map((id) => {
+      const r = records.find((rec) => rec.id === id)!;
+      return {
+        result: r.result,
+        fileName: r.file_name || "Sin nombre",
+        date: formatDate(r.created_at),
+      } as ComparisonItem;
+    });
+    onCompare(items as [ComparisonItem, ComparisonItem]);
+    setOpen(false);
   };
 
   const formatDate = (iso: string) => {
@@ -82,7 +126,32 @@ export function AnalysisHistory({ onLoad }: AnalysisHistoryProps) {
             Análisis guardados
           </SheetTitle>
         </SheetHeader>
-        <ScrollArea className="h-[calc(100vh-100px)] mt-4">
+
+        {/* Compare toolbar */}
+        <div className="flex items-center justify-between mt-4 mb-2 gap-2">
+          <Button
+            variant={compareMode ? "default" : "outline"}
+            size="sm"
+            className="gap-1.5"
+            onClick={() => {
+              setCompareMode(!compareMode);
+              setSelected(new Set());
+            }}
+          >
+            <GitCompareArrows className="h-3.5 w-3.5" />
+            {compareMode ? "Cancelar" : "Comparar"}
+          </Button>
+          {compareMode && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">{selected.size}/2 seleccionados</span>
+              <Button size="sm" disabled={selected.size !== 2} onClick={handleCompare}>
+                Comparar
+              </Button>
+            </div>
+          )}
+        </div>
+
+        <ScrollArea className="h-[calc(100vh-160px)]">
           {loading ? (
             <p className="text-sm text-muted-foreground text-center py-8">Cargando...</p>
           ) : records.length === 0 ? (
@@ -92,25 +161,41 @@ export function AnalysisHistory({ onLoad }: AnalysisHistoryProps) {
               {records.map((record) => {
                 const ext = record.result?.extraction;
                 const tipo = ext?.tipo_hipoteca;
+                const isSelected = selected.has(record.id);
                 return (
                   <button
                     key={record.id}
-                    onClick={() => handleLoad(record)}
-                    className="w-full text-left rounded-lg border p-3 hover:bg-accent/50 transition-colors group"
+                    onClick={() => compareMode ? toggleSelect(record.id) : handleLoad(record)}
+                    className={cn(
+                      "w-full text-left rounded-lg border p-3 transition-colors group",
+                      compareMode && isSelected
+                        ? "border-primary bg-primary/5"
+                        : "hover:bg-accent/50"
+                    )}
                   >
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2 min-w-0">
-                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                        {compareMode ? (
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelect(record.id)}
+                            className="shrink-0"
+                          />
+                        ) : (
+                          <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                        )}
                         <span className="text-sm font-medium truncate">{record.file_name || "Sin nombre"}</span>
                       </div>
-                      <Button
-                        variant="ghost"
-                        size="sm"
-                        className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 shrink-0"
-                        onClick={(e) => handleDelete(record.id, e)}
-                      >
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
+                      {!compareMode && (
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-6 w-6 p-0 opacity-0 group-hover:opacity-100 shrink-0"
+                          onClick={(e) => handleDelete(record.id, e)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      )}
                     </div>
                     <div className="mt-1.5 flex items-center gap-2 flex-wrap">
                       {tipo && (
@@ -135,4 +220,8 @@ export function AnalysisHistory({ onLoad }: AnalysisHistoryProps) {
       </SheetContent>
     </Sheet>
   );
+}
+
+function cn(...classes: (string | boolean | undefined)[]) {
+  return classes.filter(Boolean).join(" ");
 }
