@@ -261,6 +261,17 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
             </p>
           </div>
           <div className="flex gap-2">
+            {!isConfirmed ? (
+              <Button size="sm" onClick={handleConfirm}>
+                <Check className="h-3.5 w-3.5 mr-1" />
+                Confirmar datos
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleEdit}>
+                <Pencil className="h-3.5 w-3.5 mr-1" />
+                Editar
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleExportJson}>
               <Download className="h-3.5 w-3.5 mr-1" />
               JSON
