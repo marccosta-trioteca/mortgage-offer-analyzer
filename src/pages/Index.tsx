@@ -32,6 +32,7 @@ const Index = () => {
   const [highlightedText, setHighlightedText] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [modelStatuses, setModelStatuses] = useState<ModelStatus[]>(INITIAL_MODELS);
+  const [comparison, setComparison] = useState<[ComparisonItem, ComparisonItem] | null>(null);
 
   const hasInput = inputMode === "file" ? !!file : pastedText.trim().length > 0;
 
