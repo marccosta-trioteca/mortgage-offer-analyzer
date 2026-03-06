@@ -6,14 +6,16 @@ import { PdfViewer } from "@/components/PdfViewer";
 import { TextPasteZone } from "@/components/TextPasteZone";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { ModelProgress, type ModelStatus } from "@/components/ModelProgress";
+import { AnalysisHistory } from "@/components/AnalysisHistory";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileSearch, Upload, ClipboardPaste } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import type { MortgageAnalysisResult } from "@/types/mortgage";
 
 const INITIAL_MODELS: ModelStatus[] = [
-  { label: "GPT-5", status: "running" },
+  { label: "Gemini 3 Flash", status: "running" },
   { label: "Gemini Pro", status: "running" },
   { label: "Gemini Flash", status: "running" },
 ];
@@ -165,6 +167,26 @@ const Index = () => {
     }
   }, [file, pastedText, inputMode, hasInput]);
 
+  const handleConfirmAndSave = useCallback(async (editedResult: MortgageAnalysisResult) => {
+    try {
+      const { error } = await supabase.from("analyses").insert([{
+        file_name: editedResult.document_meta.file_name,
+        mime_type: file?.type || null,
+        result: JSON.parse(JSON.stringify(editedResult)),
+      }]);
+      if (error) throw error;
+      toast({ title: "Guardado", description: "Análisis guardado en el historial" });
+    } catch (e: any) {
+      console.error(e);
+      toast({ title: "Error al guardar", description: e.message, variant: "destructive" });
+    }
+  }, [file]);
+
+  const handleLoadFromHistory = useCallback((loadedResult: MortgageAnalysisResult, fileName: string) => {
+    setResult(loadedResult);
+    setInputMode("text");
+  }, []);
+
   const handleShowEvidence = useCallback((page: number, text: string) => {
     setHighlightedPage(page);
     setHighlightedText(text);
@@ -194,18 +216,21 @@ const Index = () => {
           <FileSearch className="h-5 w-5 text-primary" />
           <h1 className="text-base font-bold text-foreground">Analizador de Hipotecas</h1>
         </div>
-        {hasInput && (
-          <Button onClick={handleAnalyze} disabled={isAnalyzing} size="sm">
-            {isAnalyzing ? (
-              <>
-                <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                Analizando...
-              </>
-            ) : (
-              "Analizar"
-            )}
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          <AnalysisHistory onLoad={handleLoadFromHistory} />
+          {hasInput && (
+            <Button onClick={handleAnalyze} disabled={isAnalyzing} size="sm">
+              {isAnalyzing ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  Analizando...
+                </>
+              ) : (
+                "Analizar"
+              )}
+            </Button>
+          )}
+        </div>
       </header>
 
       {/* Progress bar */}
@@ -264,7 +289,7 @@ const Index = () => {
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={45} minSize={25}>
               {result ? (
-                <ResultsPanel result={result} onShowEvidence={handleShowEvidence} />
+                <ResultsPanel result={result} onShowEvidence={handleShowEvidence} onConfirm={handleConfirmAndSave} />
               ) : isAnalyzing ? (
                 <AnalyzingIndicator />
               ) : (
@@ -290,7 +315,7 @@ const Index = () => {
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={45} minSize={25}>
               {result ? (
-                <ResultsPanel result={result} onShowEvidence={handleShowEvidence} />
+                <ResultsPanel result={result} onShowEvidence={handleShowEvidence} onConfirm={handleConfirmAndSave} />
               ) : isAnalyzing ? (
                 <AnalyzingIndicator />
               ) : (
