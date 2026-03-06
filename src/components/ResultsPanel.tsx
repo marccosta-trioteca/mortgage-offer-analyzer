@@ -64,6 +64,32 @@ function EvidenceLinks({
   );
 }
 
+function ConsensusIndicator({ consensus }: { consensus?: FieldConsensusDetail }) {
+  if (!consensus) return null;
+  if (consensus.status === "full") {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs text-green-600 dark:text-green-400" title={`Acuerdo: ${consensus.models_agreed.join(", ")}`}>
+        <CheckCircle2 className="h-3 w-3" />
+        3/3
+      </span>
+    );
+  }
+  if (consensus.status === "partial") {
+    return (
+      <span className="inline-flex items-center gap-0.5 text-xs text-yellow-600 dark:text-yellow-400" title={`Acuerdo parcial: ${consensus.models_agreed.join(", ")}`}>
+        <AlertTriangle className="h-3 w-3" />
+        2/3
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-0.5 text-xs text-destructive" title="Sin acuerdo entre modelos">
+      <AlertTriangle className="h-3 w-3" />
+      0/3
+    </span>
+  );
+}
+
 function FieldCard({
   label,
   field,
@@ -71,6 +97,7 @@ function FieldCard({
   onShowEvidence,
   isConfirmed,
   onValueChange,
+  consensus,
 }: {
   label: string;
   field: ExtractionField;
@@ -78,22 +105,29 @@ function FieldCard({
   onShowEvidence: (page: number, text: string) => void;
   isConfirmed: boolean;
   onValueChange: (value: string) => void;
+  consensus?: FieldConsensusDetail;
 }) {
   const displayValue = field.value !== null ? String(field.value) : "";
 
-  const isLowConfidence = !isConfirmed && field.confidence < 0.5;
-  const isMedConfidence = !isConfirmed && field.confidence >= 0.5 && field.confidence < 0.8;
+  const noConsensus = consensus?.status === "none";
+  const isLowConfidence = !isConfirmed && (field.confidence < 0.5 || noConsensus);
+  const isMedConfidence = !isConfirmed && !noConsensus && field.confidence >= 0.5 && field.confidence < 0.8;
 
   return (
     <Card className={cn(
       "overflow-hidden transition-colors",
-      isLowConfidence && "border-destructive/60 bg-destructive/5",
+      noConsensus && "border-destructive/60 bg-destructive/5",
+      isLowConfidence && !noConsensus && "border-destructive/60 bg-destructive/5",
       isMedConfidence && "border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-950/20",
+      consensus?.status === "partial" && "border-yellow-500/50 bg-yellow-50/50 dark:bg-yellow-950/20",
     )}>
       <CardHeader className="py-3 px-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between gap-1">
           <CardTitle className="text-sm font-medium">{label}</CardTitle>
-          <ConfidenceBadge value={field.confidence} />
+          <div className="flex items-center gap-1.5">
+            <ConsensusIndicator consensus={consensus} />
+            <ConfidenceBadge value={field.confidence} />
+          </div>
         </div>
       </CardHeader>
       <CardContent className="px-4 pb-3 pt-0">
@@ -106,14 +140,20 @@ function FieldCard({
               onChange={(e) => onValueChange(e.target.value)}
               className={cn(
                 "h-8 text-lg font-semibold",
-                isLowConfidence && "border-destructive/60 focus-visible:ring-destructive/30",
+                (isLowConfidence || noConsensus) && "border-destructive/60 focus-visible:ring-destructive/30",
               )}
               placeholder="—"
             />
           )}
           <span className="text-sm text-muted-foreground whitespace-nowrap">{unit}</span>
         </div>
-        {isLowConfidence && (
+        {noConsensus && (
+          <p className="text-xs text-destructive mt-1 flex items-center gap-1">
+            <AlertTriangle className="h-3 w-3" />
+            Sin acuerdo entre modelos — revisa manualmente
+          </p>
+        )}
+        {!noConsensus && isLowConfidence && (
           <p className="text-xs text-destructive mt-1 flex items-center gap-1">
             <AlertTriangle className="h-3 w-3" />
             Confianza baja — revisa este valor
