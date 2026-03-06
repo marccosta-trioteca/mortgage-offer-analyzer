@@ -6,10 +6,12 @@ import { PdfViewer } from "@/components/PdfViewer";
 import { TextPasteZone } from "@/components/TextPasteZone";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { ModelProgress, type ModelStatus } from "@/components/ModelProgress";
+import { AnalysisHistory } from "@/components/AnalysisHistory";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileSearch, Upload, ClipboardPaste } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { supabase } from "@/integrations/supabase/client";
 import type { MortgageAnalysisResult } from "@/types/mortgage";
 
 const INITIAL_MODELS: ModelStatus[] = [
