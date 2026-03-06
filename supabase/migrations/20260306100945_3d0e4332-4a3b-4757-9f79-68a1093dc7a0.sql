@@ -1,0 +1,1 @@
+ALTER TABLE public.analyses ENABLE ROW LEVEL SECURITY;
