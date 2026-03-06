@@ -295,6 +295,9 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
           </Alert>
         )}
 
+        {/* Consensus bar */}
+        {consensus && <ConsensusBar consensus={consensus} />}
+
         {/* Review warnings */}
         {ext.needs_review && (
           <Alert variant="destructive">
@@ -312,10 +315,10 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
 
         {/* Main fields */}
         <div className="grid grid-cols-2 gap-3">
-          <FieldCard label="TIN Bonificado" field={ext.tin_bonificado} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tin_bonificado", v)} />
-          <FieldCard label="TIN Sin Bonificar" field={ext.tin_sin_bonificar} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tin_sin_bonificar", v)} />
-          <FieldCard label="TAE" field={ext.tae} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tae", v)} />
-          <FieldCard label="Cuota Final" field={ext.cuota_final} unit="€/mes" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("cuota_final", v)} />
+          <FieldCard label="TIN Bonificado" field={ext.tin_bonificado} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tin_bonificado", v)} consensus={consensus?.details?.tin_bonificado} />
+          <FieldCard label="TIN Sin Bonificar" field={ext.tin_sin_bonificar} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tin_sin_bonificar", v)} consensus={consensus?.details?.tin_sin_bonificar} />
+          <FieldCard label="TAE" field={ext.tae} unit="%" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("tae", v)} consensus={consensus?.details?.tae} />
+          <FieldCard label="Cuota Final" field={ext.cuota_final} unit="€/mes" onShowEvidence={onShowEvidence} isConfirmed={isConfirmed} onValueChange={(v) => updateField("cuota_final", v)} consensus={consensus?.details?.cuota_final} />
         </div>
 
         {/* Bonificaciones */}
