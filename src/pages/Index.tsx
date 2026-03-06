@@ -172,7 +172,7 @@ const Index = () => {
       const { error } = await supabase.from("analyses").insert([{
         file_name: editedResult.document_meta.file_name,
         mime_type: file?.type || null,
-        result: editedResult as unknown as Record<string, unknown>,
+        result: JSON.parse(JSON.stringify(editedResult)),
       }]);
       if (error) throw error;
       toast({ title: "Guardado", description: "Análisis guardado en el historial" });
