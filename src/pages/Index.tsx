@@ -5,12 +5,18 @@ import { PdfUploadZone } from "@/components/PdfUploadZone";
 import { PdfViewer } from "@/components/PdfViewer";
 import { TextPasteZone } from "@/components/TextPasteZone";
 import { ResultsPanel } from "@/components/ResultsPanel";
+import { ModelProgress, type ModelStatus } from "@/components/ModelProgress";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileSearch, Upload, ClipboardPaste } from "lucide-react";
-import { supabase } from "@/integrations/supabase/client";
 import { toast } from "@/hooks/use-toast";
 import type { MortgageAnalysisResult } from "@/types/mortgage";
+
+const INITIAL_MODELS: ModelStatus[] = [
+  { label: "GPT-5", status: "running" },
+  { label: "Gemini Pro", status: "running" },
+  { label: "Gemini Flash", status: "running" },
+];
 
 const Index = () => {
   const [file, setFile] = useState<File | null>(null);
@@ -22,6 +28,7 @@ const Index = () => {
   const [highlightedPage, setHighlightedPage] = useState<number | null>(null);
   const [highlightedText, setHighlightedText] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [modelStatuses, setModelStatuses] = useState<ModelStatus[]>(INITIAL_MODELS);
 
   const hasInput = inputMode === "file" ? !!file : pastedText.trim().length > 0;
 
@@ -41,6 +48,7 @@ const Index = () => {
     if (!hasInput) return;
     setIsAnalyzing(true);
     setProgress(10);
+    setModelStatuses(INITIAL_MODELS.map((m) => ({ ...m, status: "running" })));
 
     try {
       let body: Record<string, string>;
@@ -57,19 +65,93 @@ const Index = () => {
         body = { pdf_base64: btoa(binary), file_name: file!.name, mime_type: file!.type };
       }
 
-      setProgress(30);
+      setProgress(20);
 
-      const { data, error } = await supabase.functions.invoke("analyze-mortgage", { body });
+      // Use SSE streaming to get progress updates
+      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-mortgage`;
+      const resp = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+        },
+        body: JSON.stringify(body),
+      });
 
-      setProgress(90);
+      if (!resp.ok || !resp.body) {
+        // Try to parse as JSON error
+        const errText = await resp.text();
+        let errMsg = "Error en el análisis";
+        try {
+          const errJson = JSON.parse(errText);
+          errMsg = errJson.error || errMsg;
+        } catch {}
+        throw new Error(errMsg);
+      }
 
-      if (error) throw new Error(error.message || "Error en el análisis");
-      if (data?.error) throw new Error(data.error);
+      const reader = resp.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer2 = "";
+      let finalResult: MortgageAnalysisResult | null = null;
 
-      setResult(data as MortgageAnalysisResult);
-      setProgress(100);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer2 += decoder.decode(value, { stream: true });
 
-      toast({ title: "Análisis completado" });
+        let newlineIndex: number;
+        while ((newlineIndex = buffer2.indexOf("\n\n")) !== -1) {
+          const block = buffer2.slice(0, newlineIndex);
+          buffer2 = buffer2.slice(newlineIndex + 2);
+
+          let eventType = "";
+          let eventData = "";
+
+          for (const line of block.split("\n")) {
+            if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+            if (line.startsWith("data: ")) eventData = line.slice(6).trim();
+          }
+
+          if (!eventType || !eventData) continue;
+
+          try {
+            const parsed = JSON.parse(eventData);
+
+            if (eventType === "model_complete") {
+              const { index, status: modelStatus } = parsed;
+              setModelStatuses((prev) =>
+                prev.map((m, i) =>
+                  i === index ? { ...m, status: modelStatus === "success" ? "success" : "error" } : m
+                )
+              );
+              // Update progress based on completed models
+              setProgress((prev) => Math.min(prev + 25, 85));
+            }
+
+            if (eventType === "progress" && parsed.phase === "consensus") {
+              setProgress(90);
+            }
+
+            if (eventType === "result") {
+              finalResult = parsed as MortgageAnalysisResult;
+              setProgress(100);
+            }
+
+            if (eventType === "error") {
+              throw new Error(parsed.error || "Error en el análisis");
+            }
+          } catch (e: any) {
+            if (e.message && !e.message.includes("JSON")) throw e;
+          }
+        }
+      }
+
+      if (finalResult) {
+        setResult(finalResult);
+        toast({ title: "Análisis completado" });
+      } else {
+        throw new Error("No se recibió resultado del análisis");
+      }
     } catch (e: any) {
       console.error(e);
       toast({
@@ -95,6 +177,14 @@ const Index = () => {
 
   const showViewer = inputMode === "file" && fileUrl;
   const hasResult = !!result;
+
+  const AnalyzingIndicator = () => (
+    <div className="flex h-full items-center justify-center p-8">
+      <div className="w-full max-w-xs space-y-4">
+        <ModelProgress models={modelStatuses} />
+      </div>
+    </div>
+  );
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -123,7 +213,7 @@ const Index = () => {
 
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
-        {!showViewer && !hasResult && inputMode === "file" && !pastedText ? (
+        {!showViewer && !hasResult && inputMode === "file" && !pastedText && !isAnalyzing ? (
           // Initial state: show upload + text tabs centered
           <div className="flex h-full items-center justify-center p-8">
             <div className="w-full max-w-lg">
@@ -175,16 +265,11 @@ const Index = () => {
             <ResizablePanel defaultSize={45} minSize={25}>
               {result ? (
                 <ResultsPanel result={result} onShowEvidence={handleShowEvidence} />
+              ) : isAnalyzing ? (
+                <AnalyzingIndicator />
               ) : (
                 <div className="flex h-full items-center justify-center text-muted-foreground text-sm p-8 text-center">
-                  {isAnalyzing ? (
-                    <div className="space-y-3">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                      <p>Analizando texto con 3 modelos IA...</p>
-                    </div>
-                  ) : (
-                    <p>Haz clic en "Analizar" para extraer los datos de la hipoteca</p>
-                  )}
+                  <p>Haz clic en "Analizar" para extraer los datos de la hipoteca</p>
                 </div>
               )}
             </ResizablePanel>
@@ -206,17 +291,11 @@ const Index = () => {
             <ResizablePanel defaultSize={45} minSize={25}>
               {result ? (
                 <ResultsPanel result={result} onShowEvidence={handleShowEvidence} />
+              ) : isAnalyzing ? (
+                <AnalyzingIndicator />
               ) : (
                 <div className="flex h-full items-center justify-center text-muted-foreground text-sm p-8 text-center">
-                  {isAnalyzing ? (
-                    <div className="space-y-3">
-                      <Loader2 className="h-8 w-8 animate-spin mx-auto text-primary" />
-                      <p>Analizando documento con 3 modelos IA...</p>
-                      <p className="text-xs">GPT-5 · Gemini Pro · Gemini Flash</p>
-                    </div>
-                  ) : (
-                    <p>Haz clic en "Analizar" para extraer los datos de la hipoteca</p>
-                  )}
+                  <p>Haz clic en "Analizar" para extraer los datos de la hipoteca</p>
                 </div>
               )}
             </ResizablePanel>
