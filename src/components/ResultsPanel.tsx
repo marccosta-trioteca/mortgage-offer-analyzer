@@ -290,10 +290,6 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
             <AlertTitle className="text-green-800 dark:text-green-300">Datos confirmados</AlertTitle>
             <AlertDescription className="text-green-700 dark:text-green-400">
               Los datos han sido revisados y aceptados.
-              <Button variant="link" size="sm" onClick={handleEdit} className="ml-2 h-auto p-0 text-green-700 dark:text-green-400">
-                <Pencil className="h-3 w-3 mr-1" />
-                Editar
-              </Button>
             </AlertDescription>
           </Alert>
         ) : (
