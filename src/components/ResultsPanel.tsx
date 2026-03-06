@@ -261,6 +261,17 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
             </p>
           </div>
           <div className="flex gap-2">
+            {!isConfirmed ? (
+              <Button size="sm" onClick={handleConfirm}>
+                <Check className="h-3.5 w-3.5 mr-1" />
+                Confirmar datos
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" onClick={handleEdit}>
+                <Pencil className="h-3.5 w-3.5 mr-1" />
+                Editar
+              </Button>
+            )}
             <Button variant="outline" size="sm" onClick={handleExportJson}>
               <Download className="h-3.5 w-3.5 mr-1" />
               JSON
@@ -279,10 +290,6 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
             <AlertTitle className="text-green-800 dark:text-green-300">Datos confirmados</AlertTitle>
             <AlertDescription className="text-green-700 dark:text-green-400">
               Los datos han sido revisados y aceptados.
-              <Button variant="link" size="sm" onClick={handleEdit} className="ml-2 h-auto p-0 text-green-700 dark:text-green-400">
-                <Pencil className="h-3 w-3 mr-1" />
-                Editar
-              </Button>
             </AlertDescription>
           </Alert>
         ) : (
@@ -382,13 +389,8 @@ export function ResultsPanel({ result, onShowEvidence, onConfirm }: ResultsPanel
           </Card>
         )}
 
-        {/* Confirm / Success */}
-        {!isConfirmed ? (
-          <Button onClick={handleConfirm} className="w-full" size="lg">
-            <Check className="h-4 w-4 mr-2" />
-            Confirmar datos
-          </Button>
-        ) : (
+        {/* Confirmed status */}
+        {isConfirmed && (
           <div className="flex items-center gap-2 text-xs text-green-600 dark:text-green-400">
             <CheckCircle2 className="h-4 w-4" />
             <span>Análisis completado y confirmado</span>
