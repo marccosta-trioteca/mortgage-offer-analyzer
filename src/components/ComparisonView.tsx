@@ -137,6 +137,16 @@ export function ComparisonView({ items, onClose }: ComparisonViewProps) {
         </div>
       </div>
 
+      {(() => {
+        const fields = [
+          { key: "tin_bonificado", label: "TIN Bonificado", unit: "%", lowerBetter: true },
+          { key: "tin_sin_bonificar", label: "TIN Sin Bonificar", unit: "%", lowerBetter: true },
+          { key: "tae", label: "TAE", unit: "%", lowerBetter: true },
+          { key: "cuota_final", label: "Cuota Final", unit: "€/mes", lowerBetter: true },
+        ];
+        return null;
+      })()}
+
       <ScrollArea className="flex-1">
         <div className="p-4 space-y-4">
           {/* Comparison table */}
