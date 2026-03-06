@@ -7,7 +7,7 @@ import { TextPasteZone } from "@/components/TextPasteZone";
 import { ResultsPanel } from "@/components/ResultsPanel";
 import { ModelProgress, type ModelStatus } from "@/components/ModelProgress";
 import { AnalysisHistory, type ComparisonItem } from "@/components/AnalysisHistory";
-import { ComparisonView } from "@/components/ComparisonView";
+import { ComparisonView, type ComparisonRecord } from "@/components/ComparisonView";
 import { Progress } from "@/components/ui/progress";
 import { Button } from "@/components/ui/button";
 import { Loader2, FileSearch, Upload, ClipboardPaste } from "lucide-react";
@@ -21,140 +21,285 @@ const INITIAL_MODELS: ModelStatus[] = [
   { label: "Gemini Flash", status: "running" },
 ];
 
+interface AnalysisResultEntry {
+  file: File;
+  result: MortgageAnalysisResult;
+}
+
+async function analyzeFile(
+  file: File,
+  onModelUpdate: (index: number, status: string) => void,
+  onProgress: (value: number) => void
+): Promise<MortgageAnalysisResult> {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  for (let i = 0; i < bytes.length; i++) {
+    binary += String.fromCharCode(bytes[i]);
+  }
+  const body = { pdf_base64: btoa(binary), file_name: file.name, mime_type: file.type };
+
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-mortgage`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!resp.ok || !resp.body) {
+    const errText = await resp.text();
+    let errMsg = "Error en el análisis";
+    try { errMsg = JSON.parse(errText).error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+  let finalResult: MortgageAnalysisResult | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    sseBuffer += decoder.decode(value, { stream: true });
+
+    let newlineIndex: number;
+    while ((newlineIndex = sseBuffer.indexOf("\n\n")) !== -1) {
+      const block = sseBuffer.slice(0, newlineIndex);
+      sseBuffer = sseBuffer.slice(newlineIndex + 2);
+
+      let eventType = "";
+      let eventData = "";
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+        if (line.startsWith("data: ")) eventData = line.slice(6).trim();
+      }
+      if (!eventType || !eventData) continue;
+
+      try {
+        const parsed = JSON.parse(eventData);
+        if (eventType === "model_complete") {
+          onModelUpdate(parsed.index, parsed.status === "success" ? "success" : "error");
+          onProgress(Math.min(85, 20 + parsed.index * 25));
+        }
+        if (eventType === "progress" && parsed.phase === "consensus") onProgress(90);
+        if (eventType === "result") { finalResult = parsed; onProgress(100); }
+        if (eventType === "error") throw new Error(parsed.error || "Error");
+      } catch (e: any) {
+        if (e.message && !e.message.includes("JSON")) throw e;
+      }
+    }
+  }
+
+  if (!finalResult) throw new Error("No se recibió resultado del análisis");
+  return finalResult;
+}
+
+async function analyzeText(
+  text: string,
+  onModelUpdate: (index: number, status: string) => void,
+  onProgress: (value: number) => void
+): Promise<MortgageAnalysisResult> {
+  const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-mortgage`;
+  const resp = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
+    },
+    body: JSON.stringify({ text }),
+  });
+
+  if (!resp.ok || !resp.body) {
+    const errText = await resp.text();
+    let errMsg = "Error en el análisis";
+    try { errMsg = JSON.parse(errText).error || errMsg; } catch {}
+    throw new Error(errMsg);
+  }
+
+  const reader = resp.body.getReader();
+  const decoder = new TextDecoder();
+  let sseBuffer = "";
+  let finalResult: MortgageAnalysisResult | null = null;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    sseBuffer += decoder.decode(value, { stream: true });
+
+    let newlineIndex: number;
+    while ((newlineIndex = sseBuffer.indexOf("\n\n")) !== -1) {
+      const block = sseBuffer.slice(0, newlineIndex);
+      sseBuffer = sseBuffer.slice(newlineIndex + 2);
+
+      let eventType = "";
+      let eventData = "";
+      for (const line of block.split("\n")) {
+        if (line.startsWith("event: ")) eventType = line.slice(7).trim();
+        if (line.startsWith("data: ")) eventData = line.slice(6).trim();
+      }
+      if (!eventType || !eventData) continue;
+
+      try {
+        const parsed = JSON.parse(eventData);
+        if (eventType === "model_complete") {
+          onModelUpdate(parsed.index, parsed.status === "success" ? "success" : "error");
+          onProgress(Math.min(85, 20 + parsed.index * 25));
+        }
+        if (eventType === "progress" && parsed.phase === "consensus") onProgress(90);
+        if (eventType === "result") { finalResult = parsed; onProgress(100); }
+        if (eventType === "error") throw new Error(parsed.error || "Error");
+      } catch (e: any) {
+        if (e.message && !e.message.includes("JSON")) throw e;
+      }
+    }
+  }
+
+  if (!finalResult) throw new Error("No se recibió resultado del análisis");
+  return finalResult;
+}
+
 const Index = () => {
-  const [file, setFile] = useState<File | null>(null);
-  const [fileUrl, setFileUrl] = useState<string | null>(null);
+  // Multi-file state
+  const [files, setFiles] = useState<File[]>([]);
+  const [selectedFileIdx, setSelectedFileIdx] = useState<number>(0);
   const [pastedText, setPastedText] = useState("");
   const [inputMode, setInputMode] = useState<"file" | "text">("file");
   const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [result, setResult] = useState<MortgageAnalysisResult | null>(null);
+  const [results, setResults] = useState<AnalysisResultEntry[]>([]);
+  const [singleResult, setSingleResult] = useState<MortgageAnalysisResult | null>(null);
   const [highlightedPage, setHighlightedPage] = useState<number | null>(null);
   const [highlightedText, setHighlightedText] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
   const [modelStatuses, setModelStatuses] = useState<ModelStatus[]>(INITIAL_MODELS);
-  const [comparison, setComparison] = useState<[ComparisonItem, ComparisonItem] | null>(null);
+  const [comparison, setComparison] = useState<ComparisonRecord[] | null>(null);
+  const [analyzingLabel, setAnalyzingLabel] = useState("");
 
-  const hasInput = inputMode === "file" ? !!file : pastedText.trim().length > 0;
+  const hasInput = inputMode === "file" ? files.length > 0 : pastedText.trim().length > 0;
 
   const handleFileSelect = useCallback((f: File) => {
     if (f.size > 20 * 1024 * 1024) {
       toast({ title: "Error", description: "El archivo excede 20MB", variant: "destructive" });
       return;
     }
-    setFile(f);
-    const isImage = f.type.startsWith("image/");
-    setFileUrl(URL.createObjectURL(f) + (isImage ? "#image" : ""));
-    setResult(null);
+    setFiles([f]);
+    setSelectedFileIdx(0);
+    setResults([]);
+    setSingleResult(null);
+    setComparison(null);
     setHighlightedPage(null);
+  }, []);
+
+  const handleFilesSelect = useCallback((newFiles: File[]) => {
+    const valid = newFiles.filter((f) => {
+      if (f.size > 20 * 1024 * 1024) {
+        toast({ title: "Error", description: `${f.name} excede 20MB`, variant: "destructive" });
+        return false;
+      }
+      return true;
+    });
+    setFiles((prev) => [...prev, ...valid]);
+    setResults([]);
+    setSingleResult(null);
+    setComparison(null);
+  }, []);
+
+  const handleRemoveFile = useCallback((index: number) => {
+    setFiles((prev) => prev.filter((_, i) => i !== index));
+    setResults([]);
+    setSingleResult(null);
+    setComparison(null);
   }, []);
 
   const handleAnalyze = useCallback(async () => {
     if (!hasInput) return;
     setIsAnalyzing(true);
-    setProgress(10);
-    setModelStatuses(INITIAL_MODELS.map((m) => ({ ...m, status: "running" })));
+    setResults([]);
+    setSingleResult(null);
+    setComparison(null);
 
     try {
-      let body: Record<string, string>;
-
       if (inputMode === "text") {
-        body = { text: pastedText.trim() };
-      } else {
-        const buffer = await file!.arrayBuffer();
-        const bytes = new Uint8Array(buffer);
-        let binary = "";
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        body = { pdf_base64: btoa(binary), file_name: file!.name, mime_type: file!.type };
-      }
+        setProgress(10);
+        setModelStatuses(INITIAL_MODELS.map((m) => ({ ...m, status: "running" })));
+        setAnalyzingLabel("texto");
 
-      setProgress(20);
+        const result = await analyzeText(
+          pastedText.trim(),
+          (idx, status) =>
+            setModelStatuses((prev) =>
+              prev.map((m, i) => (i === idx ? { ...m, status: status as any } : m))
+            ),
+          setProgress
+        );
 
-      // Use SSE streaming to get progress updates
-      const url = `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/analyze-mortgage`;
-      const resp = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY}`,
-        },
-        body: JSON.stringify(body),
-      });
+        setSingleResult(result);
+        toast({ title: "Análisis completado" });
+      } else if (files.length === 1) {
+        // Single file — same as before
+        setProgress(10);
+        setModelStatuses(INITIAL_MODELS.map((m) => ({ ...m, status: "running" })));
+        setAnalyzingLabel(files[0].name);
 
-      if (!resp.ok || !resp.body) {
-        // Try to parse as JSON error
-        const errText = await resp.text();
-        let errMsg = "Error en el análisis";
-        try {
-          const errJson = JSON.parse(errText);
-          errMsg = errJson.error || errMsg;
-        } catch {}
-        throw new Error(errMsg);
-      }
+        const result = await analyzeFile(
+          files[0],
+          (idx, status) =>
+            setModelStatuses((prev) =>
+              prev.map((m, i) => (i === idx ? { ...m, status: status as any } : m))
+            ),
+          setProgress
+        );
 
-      const reader = resp.body.getReader();
-      const decoder = new TextDecoder();
-      let buffer2 = "";
-      let finalResult: MortgageAnalysisResult | null = null;
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        buffer2 += decoder.decode(value, { stream: true });
-
-        let newlineIndex: number;
-        while ((newlineIndex = buffer2.indexOf("\n\n")) !== -1) {
-          const block = buffer2.slice(0, newlineIndex);
-          buffer2 = buffer2.slice(newlineIndex + 2);
-
-          let eventType = "";
-          let eventData = "";
-
-          for (const line of block.split("\n")) {
-            if (line.startsWith("event: ")) eventType = line.slice(7).trim();
-            if (line.startsWith("data: ")) eventData = line.slice(6).trim();
-          }
-
-          if (!eventType || !eventData) continue;
-
-          try {
-            const parsed = JSON.parse(eventData);
-
-            if (eventType === "model_complete") {
-              const { index, status: modelStatus } = parsed;
-              setModelStatuses((prev) =>
-                prev.map((m, i) =>
-                  i === index ? { ...m, status: modelStatus === "success" ? "success" : "error" } : m
-                )
-              );
-              // Update progress based on completed models
-              setProgress((prev) => Math.min(prev + 25, 85));
-            }
-
-            if (eventType === "progress" && parsed.phase === "consensus") {
-              setProgress(90);
-            }
-
-            if (eventType === "result") {
-              finalResult = parsed as MortgageAnalysisResult;
-              setProgress(100);
-            }
-
-            if (eventType === "error") {
-              throw new Error(parsed.error || "Error en el análisis");
-            }
-          } catch (e: any) {
-            if (e.message && !e.message.includes("JSON")) throw e;
-          }
-        }
-      }
-
-      if (finalResult) {
-        setResult(finalResult);
+        setSingleResult(result);
         toast({ title: "Análisis completado" });
       } else {
-        throw new Error("No se recibió resultado del análisis");
+        // Multiple files — analyze sequentially and auto-compare
+        const allResults: AnalysisResultEntry[] = [];
+
+        for (let fi = 0; fi < files.length; fi++) {
+          const file = files[fi];
+          setAnalyzingLabel(`${file.name} (${fi + 1}/${files.length})`);
+          setProgress(0);
+          setModelStatuses(INITIAL_MODELS.map((m) => ({ ...m, status: "running" })));
+
+          try {
+            const result = await analyzeFile(
+              file,
+              (idx, status) =>
+                setModelStatuses((prev) =>
+                  prev.map((m, i) => (i === idx ? { ...m, status: status as any } : m))
+                ),
+              setProgress
+            );
+
+            allResults.push({ file, result });
+          } catch (e: any) {
+            console.error(`Error analyzing ${file.name}:`, e);
+            toast({
+              title: `Error al analizar ${file.name}`,
+              description: e.message,
+              variant: "destructive",
+            });
+          }
+        }
+
+        setResults(allResults);
+
+        if (allResults.length > 1) {
+          // Auto-show comparison
+          const compItems: ComparisonRecord[] = allResults.map((entry) => ({
+            result: entry.result,
+            fileName: entry.file.name,
+          }));
+          setComparison(compItems);
+          toast({ title: `${allResults.length} análisis completados`, description: "Mostrando comparación" });
+        } else if (allResults.length === 1) {
+          setSingleResult(allResults[0].result);
+          toast({ title: "Análisis completado" });
+        }
       }
     } catch (e: any) {
       console.error(e);
@@ -165,32 +310,40 @@ const Index = () => {
       });
     } finally {
       setIsAnalyzing(false);
+      setAnalyzingLabel("");
       setTimeout(() => setProgress(0), 1000);
     }
-  }, [file, pastedText, inputMode, hasInput]);
+  }, [files, pastedText, inputMode, hasInput]);
 
-  const handleConfirmAndSave = useCallback(async (editedResult: MortgageAnalysisResult) => {
-    try {
-      const { error } = await supabase.from("analyses").insert([{
-        file_name: editedResult.document_meta.file_name,
-        mime_type: file?.type || null,
-        result: JSON.parse(JSON.stringify(editedResult)),
-      }]);
-      if (error) throw error;
-      toast({ title: "Guardado", description: "Análisis guardado en el historial" });
-    } catch (e: any) {
-      console.error(e);
-      toast({ title: "Error al guardar", description: e.message, variant: "destructive" });
-    }
-  }, [file]);
+  const handleConfirmAndSave = useCallback(
+    async (editedResult: MortgageAnalysisResult) => {
+      try {
+        const { error } = await supabase.from("analyses").insert([
+          {
+            file_name: editedResult.document_meta.file_name,
+            mime_type: files[selectedFileIdx]?.type || null,
+            result: JSON.parse(JSON.stringify(editedResult)),
+          },
+        ]);
+        if (error) throw error;
+        toast({ title: "Guardado", description: "Análisis guardado en el historial" });
+      } catch (e: any) {
+        console.error(e);
+        toast({ title: "Error al guardar", description: e.message, variant: "destructive" });
+      }
+    },
+    [files, selectedFileIdx]
+  );
 
   const handleLoadFromHistory = useCallback((loadedResult: MortgageAnalysisResult, fileName: string) => {
-    setResult(loadedResult);
+    setSingleResult(loadedResult);
+    setComparison(null);
     setInputMode("text");
   }, []);
 
-  const handleCompare = useCallback((items: [ComparisonItem, ComparisonItem]) => {
+  const handleCompareFromHistory = useCallback((items: [ComparisonItem, ComparisonItem]) => {
     setComparison(items);
+    setSingleResult(null);
   }, []);
 
   const handleShowEvidence = useCallback((page: number, text: string) => {
@@ -200,20 +353,29 @@ const Index = () => {
 
   const handleClearText = () => {
     setPastedText("");
-    setResult(null);
+    setSingleResult(null);
   };
 
-  const showViewer = inputMode === "file" && fileUrl;
-  const hasResult = !!result;
+  const currentFile = files[selectedFileIdx];
+  const currentFileUrl = currentFile
+    ? URL.createObjectURL(currentFile) + (currentFile.type.startsWith("image/") ? "#image" : "")
+    : null;
+  const showViewer = inputMode === "file" && currentFileUrl && files.length > 0;
+  const activeResult = singleResult;
+  const hasResult = !!activeResult;
 
   const AnalyzingIndicator = () => (
     <div className="flex h-full items-center justify-center p-8">
       <div className="w-full max-w-xs space-y-4">
+        {analyzingLabel && (
+          <p className="text-xs text-muted-foreground text-center truncate">{analyzingLabel}</p>
+        )}
         <ModelProgress models={modelStatuses} />
       </div>
     </div>
   );
 
+  // Comparison view (from multi-file or history)
   if (comparison) {
     return (
       <div className="flex h-screen flex-col bg-background">
@@ -231,16 +393,16 @@ const Index = () => {
           <h1 className="text-base font-bold text-foreground">Analizador de Hipotecas</h1>
         </div>
         <div className="flex items-center gap-2">
-          <AnalysisHistory onLoad={handleLoadFromHistory} onCompare={handleCompare} />
+          <AnalysisHistory onLoad={handleLoadFromHistory} onCompare={handleCompareFromHistory} />
           {hasInput && (
             <Button onClick={handleAnalyze} disabled={isAnalyzing} size="sm">
               {isAnalyzing ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin mr-1" />
-                  Analizando...
+                  Analizando{files.length > 1 ? ` (${files.length})` : ""}...
                 </>
               ) : (
-                "Analizar"
+                <>Analizar{files.length > 1 ? ` (${files.length})` : ""}</>
               )}
             </Button>
           )}
@@ -253,14 +415,13 @@ const Index = () => {
       {/* Main content */}
       <div className="flex-1 overflow-hidden">
         {!showViewer && !hasResult && inputMode === "file" && !pastedText && !isAnalyzing ? (
-          // Initial state: show upload + text tabs centered
           <div className="flex h-full items-center justify-center p-8">
             <div className="w-full max-w-lg">
               <Tabs value={inputMode} onValueChange={(v) => setInputMode(v as "file" | "text")}>
                 <TabsList className="grid w-full grid-cols-2">
                   <TabsTrigger value="file" className="gap-1.5">
                     <Upload className="h-3.5 w-3.5" />
-                    Subir archivo
+                    Subir archivos
                   </TabsTrigger>
                   <TabsTrigger value="text" className="gap-1.5">
                     <ClipboardPaste className="h-3.5 w-3.5" />
@@ -268,7 +429,14 @@ const Index = () => {
                   </TabsTrigger>
                 </TabsList>
                 <TabsContent value="file" className="mt-4">
-                  <PdfUploadZone onFileSelect={handleFileSelect} isLoading={isAnalyzing} />
+                  <PdfUploadZone
+                    onFileSelect={handleFileSelect}
+                    onFilesSelect={handleFilesSelect}
+                    isLoading={isAnalyzing}
+                    multiple
+                    files={files}
+                    onRemoveFile={handleRemoveFile}
+                  />
                 </TabsContent>
                 <TabsContent value="text" className="mt-4">
                   <TextPasteZone value={pastedText} onChange={setPastedText} onClear={handleClearText} disabled={isAnalyzing} />
@@ -277,7 +445,6 @@ const Index = () => {
             </div>
           </div>
         ) : inputMode === "text" ? (
-          // Text mode: split between text area and results
           <ResizablePanelGroup direction="horizontal">
             <ResizablePanel defaultSize={55} minSize={30}>
               <div className="h-full flex flex-col">
@@ -302,8 +469,8 @@ const Index = () => {
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={45} minSize={25}>
-              {result ? (
-                <ResultsPanel result={result} onShowEvidence={handleShowEvidence} onConfirm={handleConfirmAndSave} />
+              {activeResult ? (
+                <ResultsPanel result={activeResult} onShowEvidence={handleShowEvidence} onConfirm={handleConfirmAndSave} />
               ) : isAnalyzing ? (
                 <AnalyzingIndicator />
               ) : (
@@ -314,22 +481,30 @@ const Index = () => {
             </ResizablePanel>
           </ResizablePanelGroup>
         ) : (
-          // File mode with viewer
           <ResizablePanelGroup direction="horizontal">
             <ResizablePanel defaultSize={55} minSize={30}>
               <div className="h-full flex flex-col">
                 <div className="px-4 py-2 border-b">
-                  <PdfUploadZone onFileSelect={handleFileSelect} isLoading={isAnalyzing} fileName={file?.name} />
+                  <PdfUploadZone
+                    onFileSelect={handleFileSelect}
+                    onFilesSelect={handleFilesSelect}
+                    isLoading={isAnalyzing}
+                    multiple
+                    files={files}
+                    onRemoveFile={handleRemoveFile}
+                  />
                 </div>
                 <div className="flex-1 overflow-hidden">
-                  <PdfViewer fileUrl={fileUrl!} highlightedPage={highlightedPage} highlightedText={highlightedText} />
+                  {currentFileUrl && (
+                    <PdfViewer fileUrl={currentFileUrl} highlightedPage={highlightedPage} highlightedText={highlightedText} />
+                  )}
                 </div>
               </div>
             </ResizablePanel>
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={45} minSize={25}>
-              {result ? (
-                <ResultsPanel result={result} onShowEvidence={handleShowEvidence} onConfirm={handleConfirmAndSave} />
+              {activeResult ? (
+                <ResultsPanel result={activeResult} onShowEvidence={handleShowEvidence} onConfirm={handleConfirmAndSave} />
               ) : isAnalyzing ? (
                 <AnalyzingIndicator />
               ) : (
