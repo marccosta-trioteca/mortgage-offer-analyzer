@@ -315,7 +315,7 @@ const Index = () => {
             <ResizableHandle withHandle />
             <ResizablePanel defaultSize={45} minSize={25}>
               {result ? (
-                <ResultsPanel result={result} onShowEvidence={handleShowEvidence} />
+                <ResultsPanel result={result} onShowEvidence={handleShowEvidence} onConfirm={handleConfirmAndSave} />
               ) : isAnalyzing ? (
                 <AnalyzingIndicator />
               ) : (
